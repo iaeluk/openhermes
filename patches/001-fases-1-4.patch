@@ -455,8 +455,21 @@ index 073a6db67b..46b9a0eda1 100644
      },
      [appendMessage, composerActions, composerRefs, composerState, dispatchSubmission, gw, sys]
    )
+diff --git a/ui-tui/src/components/appChrome.tsx b/ui-tui/src/components/appChrome.tsx
+index 967f269065..6e1cd2f041 100644
+--- a/ui-tui/src/components/appChrome.tsx
++++ b/ui-tui/src/components/appChrome.tsx
+@@ -476,7 +476,7 @@ function IdleSince({ endedAt }: { endedAt: number }) {
+ // `wire` is the level the route actually sends (session.info.reasoning_effort_wire):
+ // a clamped Hermes step such as `ultra` reads `ultra→max`, like the CLI's
+ // "ultra (sends max on this route)", never as a distinct wire level (#61634).
+-const effortLabel = (effort?: string, wire?: string) => {
++export const effortLabel = (effort?: string, wire?: string) => {
+   const value = String(effort ?? '')
+     .trim()
+     .toLowerCase()
 diff --git a/ui-tui/src/components/appLayout.tsx b/ui-tui/src/components/appLayout.tsx
-index 2808ae5ccd..ac0b69f557 100644
+index 2808ae5ccd..40111d8b58 100644
 --- a/ui-tui/src/components/appLayout.tsx
 +++ b/ui-tui/src/components/appLayout.tsx
 @@ -36,6 +36,7 @@ import { GoalBar } from './goalBar.js'
@@ -668,18 +681,21 @@ index 2808ae5ccd..ac0b69f557 100644
                    // Exactly the "(and N more toolsets…)" tone. `muted` is a
                    // MID-luminance family tone, so it reads receded on both
                    // poles even when polarity detection is wrong (transparent
-@@ -486,8 +543,20 @@ const ComposerPane = memo(function ComposerPane({
+@@ -486,8 +543,23 @@ const ComposerPane = memo(function ComposerPane({
                  <GoodVibesHeart t={ui.theme} tick={status.goodVibesTick} />
                </Box>
              </Box>
 -          </>
++            {/* openhermes: breathing room between the input and the model line. */}
++            {oc && <Box height={1} />}
 +            {oc && (
 +              <OpencodeModelLine
 +                agent={ui.agentMode}
++                effort={ui.info?.reasoning_effort}
++                effortWire={ui.info?.reasoning_effort_wire}
 +                model={ui.info?.model ?? ''}
 +                provider={ui.info?.provider}
 +                t={ui.theme}
-+                tier={ui.info?.service_tier}
 +              />
 +            )}
 +          </Box>
@@ -690,7 +706,7 @@ index 2808ae5ccd..ac0b69f557 100644
        </Box>
  
        {nativeMode && <FloatingOverlays {...floatingOverlayProps} nativeMode />}
-@@ -532,6 +601,11 @@ const StatusRulePane = memo(function StatusRulePane({
+@@ -532,6 +604,11 @@ const StatusRulePane = memo(function StatusRulePane({
  }: Pick<AppLayoutProps, 'composer' | 'status'> & { at: 'bottom' | 'top'; nativeMode: boolean }) {
    const ui = useStore($uiState)
  
@@ -702,7 +718,7 @@ index 2808ae5ccd..ac0b69f557 100644
    if (ui.statusBar === 'off' || (nativeMode ? at !== 'top' : ui.statusBar !== at)) {
      return null
    }
-@@ -591,9 +665,39 @@ export const AppLayout = memo(function AppLayout({
+@@ -591,9 +668,39 @@ export const AppLayout = memo(function AppLayout({
    const Shell = INLINE_MODE ? Fragment : AlternateScreen
    const shellProps = INLINE_MODE ? {} : { mouseTracking }
  
@@ -742,7 +758,7 @@ index 2808ae5ccd..ac0b69f557 100644
          <Box flexDirection="row" flexGrow={1}>
            {!overlay.agents && !overlay.journey && <AmbientRail side="left" />}
            {overlay.agents ? (
-@@ -617,8 +721,9 @@ export const AppLayout = memo(function AppLayout({
+@@ -617,8 +724,9 @@ export const AppLayout = memo(function AppLayout({
            )}
            {!overlay.agents && !overlay.journey && <AmbientRail side="right" />}
          </Box>
@@ -753,7 +769,7 @@ index 2808ae5ccd..ac0b69f557 100644
            <>
              <PerfPane id="prompt">
                <PromptZone
-@@ -652,6 +757,10 @@ export const AppLayout = memo(function AppLayout({
+@@ -652,6 +760,10 @@ export const AppLayout = memo(function AppLayout({
            </>
          )}
  
@@ -831,10 +847,10 @@ index 9de4c52c03..eeb9c1f90e 100644
  
 diff --git a/ui-tui/src/components/opencode.tsx b/ui-tui/src/components/opencode.tsx
 new file mode 100644
-index 0000000000..2e619fbf51
+index 0000000000..3f8e82a00e
 --- /dev/null
 +++ b/ui-tui/src/components/opencode.tsx
-@@ -0,0 +1,309 @@
+@@ -0,0 +1,315 @@
 +import { Box, Text } from '@hermes/ink'
 +import { compactNumber } from '@hermes/shared/format'
 +import type { Usage } from '@hermes/shared/gateway-events'
@@ -846,6 +862,8 @@ index 0000000000..2e619fbf51
 +import type { SessionActiveItem, SessionActiveListResponse } from '../gatewayTypes.js'
 +import type { Theme } from '../theme.js'
 +import type { SessionInfo } from '../types.js'
++
++import { effortLabel } from './appChrome.js'
 +
 +// openhermes Fase 2: opencode-style surfaces for the Ink TUI, rendered only
 +// when `display.layout` is "opencode". Classic look is untouched.
@@ -907,22 +925,26 @@ index 0000000000..2e619fbf51
 +
 +export const OpencodeModelLine = memo(function OpencodeModelLine({
 +  agent,
++  effort,
++  effortWire,
 +  model,
 +  provider,
-+  t,
-+  tier
++  t
 +}: {
 +  agent: string
++  effort?: string
++  effortWire?: string
 +  model: string
 +  provider?: string
 +  t: Theme
-+  tier?: string
 +}) {
 +  if (!model) {
 +    return null
 +  }
 +
 +  const where = [model, provider].filter(Boolean).join(' ')
++  // Same token as the classic status bar: hidden when default/medium.
++  const how = effortLabel(effort, effortWire)
 +
 +  return (
 +    <Box>
@@ -931,7 +953,7 @@ index 0000000000..2e619fbf51
 +          {agent}
 +        </Text>
 +        {` · ${where}`}
-+        {tier ? ` · ${tier}` : ''}
++        {how ? ` · ${how}` : ''}
 +      </Text>
 +    </Box>
 +  )
