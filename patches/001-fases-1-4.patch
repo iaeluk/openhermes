@@ -759,7 +759,7 @@ index 967f269065..6e1cd2f041 100644
      .trim()
      .toLowerCase()
 diff --git a/ui-tui/src/components/appLayout.tsx b/ui-tui/src/components/appLayout.tsx
-index 2808ae5ccd..07e012bddf 100644
+index 2808ae5ccd..cfbba5bc01 100644
 --- a/ui-tui/src/components/appLayout.tsx
 +++ b/ui-tui/src/components/appLayout.tsx
 @@ -36,6 +36,7 @@ import { GoalBar } from './goalBar.js'
@@ -899,7 +899,7 @@ index 2808ae5ccd..07e012bddf 100644
 +          <Box
 +            {...(oc
 +              ? {
-+                  borderStyle: 'single',
++                  borderStyle: 'bold',
 +                  borderTop: false,
 +                  borderBottom: false,
 +                  borderRight: false,
@@ -1175,10 +1175,10 @@ index 135448153f..ec75df72bb 100644
    detailsMode?: DetailsMode
 diff --git a/ui-tui/src/components/opencode.tsx b/ui-tui/src/components/opencode.tsx
 new file mode 100644
-index 0000000000..ffffe0667f
+index 0000000000..b79accd788
 --- /dev/null
 +++ b/ui-tui/src/components/opencode.tsx
-@@ -0,0 +1,321 @@
+@@ -0,0 +1,322 @@
 +import { Box, Text } from '@hermes/ink'
 +import { compactNumber } from '@hermes/shared/format'
 +import type { Usage } from '@hermes/shared/gateway-events'
@@ -1246,11 +1246,12 @@ index 0000000000..ffffe0667f
 +      borderBottom={false}
 +      borderColor={t.color.accent}
 +      borderRight={false}
-+      borderStyle="single"
++      borderStyle="bold"
 +      borderTop={false}
 +      flexDirection="column"
 +      marginBottom={1}
 +      paddingX={1}
++      paddingY={1}
 +    >
 +      {children}
 +    </Box>
