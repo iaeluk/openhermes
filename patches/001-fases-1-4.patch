@@ -845,6 +845,40 @@ index 9de4c52c03..eeb9c1f90e 100644
    if (overlay.modelPicker) {
      const initialRefresh = typeof overlay.modelPicker === 'object' && overlay.modelPicker.refresh === true
  
+diff --git a/ui-tui/src/components/messageLine.tsx b/ui-tui/src/components/messageLine.tsx
+index 135448153f..ec75df72bb 100644
+--- a/ui-tui/src/components/messageLine.tsx
++++ b/ui-tui/src/components/messageLine.tsx
+@@ -44,6 +44,7 @@ export const fmtMsgTimestamp = (createdAt: number | undefined): null | string =>
+ }
+ 
+ export const MessageLine = memo(function MessageLine({
++  bare = false,
+   cols,
+   compact,
+   detailsMode = 'collapsed',
+@@ -262,6 +263,12 @@ export const MessageLine = memo(function MessageLine({
+   const stamp =
+     timestamps && (msg.role === 'user' || msg.role === 'assistant') && !msg.kind ? fmtMsgTimestamp(msg.createdAt) : null
+ 
++  // openhermes bare mode: content only (no gutter glyph, margins, or
++  // trail chrome), for rendering inside accent bands.
++  if (bare) {
++    return <Box flexDirection="column">{content}</Box>
++  }
++
+   return (
+     <Box
+       flexDirection="column"
+@@ -336,6 +343,8 @@ export const shouldShowThinkingTrail = (
+   Boolean(msg.isMoaReference) || thinkingMode !== 'hidden' || toolsMode !== 'hidden' || activityMode !== 'hidden'
+ 
+ interface MessageLineProps {
++  /** openhermes: render content only, no gutter glyph or row margins. */
++  bare?: boolean
+   cols: number
+   compact?: boolean
+   detailsMode?: DetailsMode
 diff --git a/ui-tui/src/components/opencode.tsx b/ui-tui/src/components/opencode.tsx
 new file mode 100644
 index 0000000000..3f8e82a00e
