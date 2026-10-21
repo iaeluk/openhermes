@@ -1,79 +1,79 @@
 # openhermes
 
-A cara do OpenCode no Hermes Agent. Um layout opt-in para o Ink TUI (`hermes --tui`) que replica fielmente a aparência e o comportamento do OpenCode 2, mantendo 100% das ferramentas, memória, gateway e skills do Hermes. Nada do CLI clássico muda.
+The OpenCode look on Hermes Agent. An opt-in layout for the Ink TUI (`hermes --tui`) that faithfully replicates the appearance and behavior of OpenCode 2, while keeping 100% of the Hermes tools, memory, gateway, and skills. Nothing in the classic CLI changes.
 
-Projeto comunitário, sem afiliação com a SST (OpenCode) nem com a Nous Research (Hermes Agent).
+Community project, not affiliated with SST (OpenCode) or Nous Research (Hermes Agent).
 
-## O que vem neste repo
+## What's in this repo
 
-| Pasta/arquivo | O que é |
+| Path/file | What it is |
 |---|---|
-| `themes/` | 66 skins prontas para `~/.hermes/skins/`: os 33 temas reais do OpenCode 2.0.32 em modo escuro (`oh-dracula.yaml`) e claro (`oh-dracula-light.yaml`), com valores extraídos do binário oficial |
-| `preview/` | Prévia clicável aprovada do layout completo (HTML único, abra no navegador) |
-| `specs/layout.md` | Especificação comportamental exata: cada tela, cada atalho, cada regra |
-| `specs/mapping.md` | Cada elemento da prévia mapeado para o sistema real do Hermes (arquivo ou comando) |
-| `SKILL.md` | Instruções para o seu Hermes construir o layout passo a passo, sem erro |
-| `scripts/` | Validador das skins e servidor da prévia |
+| `themes/` | 66 ready-to-use skins for `~/.hermes/skins/`: the 33 real OpenCode 2.0.32 themes in dark (`oh-dracula.yaml`) and light (`oh-dracula-light.yaml`) modes, with values extracted from the official binary |
+| `preview/` | Approved clickable preview of the full layout (single HTML file, open it in a browser) |
+| `specs/layout.md` | Exact behavioral spec: every screen, every shortcut, every rule |
+| `specs/mapping.md` | Every preview element mapped to the real Hermes system (file or command) |
+| `SKILL.md` | Instructions for your Hermes to build the layout step by step, with no errors |
+| `scripts/` | Skin validator and preview server |
 
-## Pré-requisitos
+## Prerequisites
 
-- Hermes Agent instalado e funcionando (`hermes --version` responde)
-- Um modelo configurado (`hermes model` já passou ao menos uma vez)
-- Python 3 para os scripts (só isso, sem dependências)
+- Hermes Agent installed and working (`hermes --version` answers)
+- A configured model (`hermes model` has run at least once)
+- Python 3 for the scripts (that's all, no dependencies)
 
-## Instalação das skins (2 minutos)
+## Installing the skins (2 minutes)
 
 ```bash
-# 1. Copie as skins
+# 1. Copy the skins
 cp openhermes/themes/*.yaml ~/.hermes/skins/
 
-# 2. Ative uma (exemplo: o tema padrão do OpenCode, modo escuro)
+# 2. Enable one (example: the default OpenCode theme, dark mode)
 hermes config set display.skin oh-opencode
 
-# 3. Volte quando quiser
+# 3. Switch back whenever you want
 hermes config set display.skin default
 ```
 
-Nunca edite `config.yaml` na mão para isso. Use sempre `hermes config set`.
+Never hand-edit `config.yaml` for this. Always use `hermes config set`.
 
-## Como pedir ao seu Hermes para construir o layout
+## How to ask your Hermes to build the layout
 
-O layout (telas, paleta, abas, atalhos) ainda é construído pelo agente seguindo a spec. Cole isto no seu Hermes:
+The layout (screens, palette, tabs, shortcuts) is still built by the agent following the spec. Paste this into your Hermes:
 
 ```
-Leia SKILL.md do repo openhermes e execute a Fase 1 (skins + flag
-display.layout). Só avance de fase quando eu aprovar a anterior.
+Read the openhermes repo's SKILL.md and run Phase 1 (skins + the
+display.layout flag). Only move to the next phase once I approve the current one.
 ```
 
-Ou instale a skill direto:
+Or install the skill directly:
 
 ```bash
-hermes skills install https://github.com/<voce>/openhermes/blob/main/SKILL.md
+hermes skills install https://github.com/<you>/openhermes/blob/main/SKILL.md
 ```
 
-## Verificação (como saber que funcionou)
+## Verification (how to tell it worked)
 
-1. `hermes config get display.skin` mostra `oh-opencode`
-2. `hermes --tui` abre a tela inicial limpa centralizada, sem painel de ferramentas
-3. Ctrl+P abre Commands com o menu completo antes de digitar
-4. Digitar `theme` filtra e mostra 1 item; Enter abre os 33 temas
-5. Shift+Tab alterna SMART, PLAN e YOLO na linha da caixa
-6. Digitar `/` abre o autocomplete com os slashes do Hermes
-7. Nova aba pelo `+` abre a inicial limpa; digitou, virou conversa e o `+` volta
+1. `hermes config get display.skin` shows `oh-opencode`
+2. `hermes --tui` opens the clean centered home screen, with no tools panel
+3. Ctrl+P opens Commands with the full menu before typing anything
+4. Typing `theme` filters down to 1 item; Enter opens the 33 themes
+5. Shift+Tab cycles SMART, PLAN, and YOLO on the input box line
+6. Typing `/` opens autocomplete with the Hermes slash commands
+7. A new tab via `+` opens the clean home; once you type it becomes a conversation and `+` comes back
 
-## Temas
+## Themes
 
-Extraídos do binário oficial do OpenCode 2.0.32 (variável de registro `ue` mais o tema `opencode`), modos claro e escuro resolvidos por token: fundo, texto, atenuado, destaque, seleção, agente, variante, painel, faixa, borda, diffs e sintaxe. O modo `system` do OpenCode segue o terminal; no Hermes, troque entre `oh-<nome>` e `oh-<nome>-light`.
+Extracted from the official OpenCode 2.0.32 binary (registry variable `ue` plus the `opencode` theme), with light and dark modes resolved per token: background, text, muted, accent, selection, agent, variant, panel, band, border, diffs, and syntax. OpenCode's `system` mode follows the terminal; on Hermes, switch between `oh-<name>` and `oh-<name>-light`.
 
 ## Status
 
-- Prévia HTML: aprovada, coberta por 20 checks executáveis
-- Skins: geradas e validadas (`scripts/validate_skins.py`), reconhecidas pelo Hermes real
-- Porte do TUI: fases 1 a 4 implementadas e verificadas no branch `openhermes`
-  (typecheck limpo, 1633 testes verdes, fumaça ao vivo no terminal);
-  patch exportado em `patches/001-fases-1-4.patch`
-- Falta: nome customizado no TUI (precisa de RPC novo no gateway, fase 5)
+- HTML preview: approved, covered by 20 executable checks
+- Skins: generated and validated (`scripts/validate_skins.py`), recognized by the real Hermes
+- TUI port: phases 1–4 implemented and verified on the `openhermes` branch
+  (clean typecheck, 1633 green tests, live smoke test in the terminal);
+  patch exported in `patches/001-fases-1-4.patch`
+- Missing: custom name in the TUI (needs a new gateway RPC, phase 5)
 
-## Licença
+## License
 
-MIT. As cores dos temas pertencem aos seus autores originais.
+MIT. Theme colors belong to their original authors.
