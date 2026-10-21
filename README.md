@@ -4,6 +4,8 @@ The OpenCode look on Hermes Agent. An opt-in layout for the Ink TUI (`hermes --t
 
 Community project, not affiliated with SST (OpenCode) or Nous Research (Hermes Agent).
 
+![openhermes home screen](preview/screenshot-home.png)
+
 ## Apply in 5 minutes (recommended)
 
 Everything is pre-built: new files, one patch, 66 skins, and scripts that check each step. Your slash commands, models, sessions, skills, and plugins are read live from your own setup — nothing to migrate.
