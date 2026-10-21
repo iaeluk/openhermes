@@ -12,6 +12,40 @@ index 76b6fbd23a..c864faeefd 100644
          # Native TUI uses the terminal's primary buffer and scrollback instead of the custom
          # alternate-screen viewport. Flags win: `--native` / `--tui-native` and `--cli`.
          "tui_native": False,
+diff --git a/tui_gateway/methods_config.py b/tui_gateway/methods_config.py
+index 312c032206..2d3dbd9c7b 100644
+--- a/tui_gateway/methods_config.py
++++ b/tui_gateway/methods_config.py
+@@ -276,6 +276,7 @@ _CONFIG_GETTERS = {
+     "thinking_mode": _cfg_get_thinking_mode,
+     "density": lambda params: {"value": "on" if bool(_display_raw().get("tui_compact", False)) else "off"},
+     "theme": lambda params: {"value": _display_word("tui_theme", "auto", {"auto", "light", "dark"})},
++    "layout": lambda params: {"value": _display_word("layout", "classic", {"classic", "opencode"})},
+     "statusbar": lambda params: {"value": _coerce_statusbar(_display_cfg().get("tui_statusbar", "top"))},
+     "focus": lambda params: {"value": "on" if bool(_display_cfg().get("focus_view", False)) else "off",
+                              "tool_progress": _load_tool_progress_mode()},
+diff --git a/tui_gateway/methods_config_set.py b/tui_gateway/methods_config_set.py
+index d691c1d2a8..4f164a6129 100644
+--- a/tui_gateway/methods_config_set.py
++++ b/tui_gateway/methods_config_set.py
+@@ -368,6 +368,8 @@ def _word_setters() -> dict:
+         # 'light'/'dark' pin beats background auto-detection (xterm.js hosts misreport OSC 11).
+         "theme": (_word, {"auto", "light", "dark"}, "unknown theme value: {value} (use auto|light|dark)",
+                   lambda w: _write_config_key("display.tui_theme", w)),
++        "layout": (_word, {"classic", "opencode"}, "unknown layout: {value} (use classic|opencode)",
++                   lambda w: _write_config_key("display.layout", w)),
+         # _raw_word: 0/False/[] keep their text so the error names what was sent.
+         "indicator": (_raw_word, INDICATOR_STYLES, "unknown indicator: {raw!r}; pick one of " + "|".join(INDICATOR_STYLES),
+                       lambda w: _write_config_key("display.tui_status_indicator", w)),
+@@ -489,7 +491,7 @@ _CONFIG_SETTERS = {
+     "model": _set_model, "fast": _set_fast, "busy": _set_busy, "verbose": _set_verbose, "focus": _set_focus,
+     "approval_mode": _set_approval_mode, "approvals.mode": _set_word, "yolo": _set_yolo,
+     "reasoning": _set_reasoning, "details_mode": _set_word, "thinking_mode": _set_word,
+-    "density": _set_toggle, "battery": _set_toggle, "theme": _set_word,
++    "density": _set_toggle, "battery": _set_toggle, "theme": _set_word, "layout": _set_word,
+     "statusbar": _set_toggle, "mouse": _set_toggle, "indicator": _set_word, "voice.voice_chat_mode": _set_word,
+     "cwd": _set_cwd, "terminal.cwd": _set_cwd, "workdir": _set_cwd,
+     "prompt": _set_prompt, "personality": _set_personality, "skin": _set_skin}
 diff --git a/ui-tui/src/__tests__/opencodePalette.test.ts b/ui-tui/src/__tests__/opencodePalette.test.ts
 new file mode 100644
 index 0000000000..3cb5137bcd
@@ -378,7 +412,7 @@ index 2808ae5ccd..89214008c5 100644
            {!overlay.agents && !overlay.journey && <AmbientRail side="left" />}
            {overlay.agents ? (
 diff --git a/ui-tui/src/components/appOverlays.tsx b/ui-tui/src/components/appOverlays.tsx
-index 9de4c52c03..3435b11796 100644
+index 9de4c52c03..eeb9c1f90e 100644
 --- a/ui-tui/src/components/appOverlays.tsx
 +++ b/ui-tui/src/components/appOverlays.tsx
 @@ -5,7 +5,7 @@ import type { ReactNode } from 'react'
@@ -410,7 +444,7 @@ index 9de4c52c03..3435b11796 100644
  
    const start = Math.max(0, Math.min(compIdx - Math.floor(COMPLETION_WINDOW / 2), completions.length - viewportSize))
  
-@@ -298,6 +302,27 @@ export function FloatingOverlays({
+@@ -298,6 +302,31 @@ export function FloatingOverlays({
      })
    }
  
@@ -418,19 +452,23 @@ index 9de4c52c03..3435b11796 100644
 +    widgets.push({
 +      id: 'opencode-palette',
 +      render: width => (
-+        <FloatBox color={theme.color.border}>
-+          <OpencodePalette
-+            onCancel={() => patchOverlayState({ opencodePalette: false })}
-+            onNewSession={onNewLiveSession}
-+            onOpenConnectors={() =>
-+              patchOverlayState({ opencodePalette: false, connectors: true })}
-+            onOpenModelPicker={() => patchOverlayState({ opencodePalette: false, modelPicker: true })}
-+            onOpenPluginsHub={() => patchOverlayState({ opencodePalette: false, pluginsHub: true })}
-+            onOpenSessions={() => patchOverlayState({ opencodePalette: false, sessions: true })}
-+            onOpenSkillsHub={() => patchOverlayState({ opencodePalette: false, skillsHub: true })}
-+            t={theme}
-+          />
-+        </FloatBox>
++        // openhermes: palette floats centered like the preview (other
++        // pickers stay left-docked to the composer).
++        <Box flexDirection="row" justifyContent="center" width={width}>
++          <FloatBox color={theme.color.border}>
++            <OpencodePalette
++              onCancel={() => patchOverlayState({ opencodePalette: false })}
++              onNewSession={onNewLiveSession}
++              onOpenConnectors={() =>
++                patchOverlayState({ opencodePalette: false, connectors: true })}
++              onOpenModelPicker={() => patchOverlayState({ opencodePalette: false, modelPicker: true })}
++              onOpenPluginsHub={() => patchOverlayState({ opencodePalette: false, pluginsHub: true })}
++              onOpenSessions={() => patchOverlayState({ opencodePalette: false, sessions: true })}
++              onOpenSkillsHub={() => patchOverlayState({ opencodePalette: false, skillsHub: true })}
++              t={theme}
++            />
++          </FloatBox>
++        </Box>
 +      )
 +    })
 +  }
@@ -741,15 +779,17 @@ index 0000000000..baaa7abc1c
 +})
 diff --git a/ui-tui/src/components/opencodePalette.tsx b/ui-tui/src/components/opencodePalette.tsx
 new file mode 100644
-index 0000000000..3adc12ff0d
+index 0000000000..9a4058b089
 --- /dev/null
 +++ b/ui-tui/src/components/opencodePalette.tsx
-@@ -0,0 +1,385 @@
+@@ -0,0 +1,389 @@
 +import { Box, Text, useInput } from '@hermes/ink'
++import { useStore } from '@nanostores/react'
 +import { memo, useCallback, useEffect, useRef, useState } from 'react'
 +
 +import { useGateway } from '../app/gatewayContext.js'
 +import { patchOverlayState } from '../app/overlayStore.js'
++import { $uiState } from '../app/uiStore.js'
 +import { detectLightMode } from '../theme.js'
 +import type { Theme } from '../theme.js'
 +
@@ -816,6 +856,7 @@ index 0000000000..3adc12ff0d
 +  t
 +}: OpencodePaletteProps) {
 +  const { rpc } = useGateway()
++  const uiLayout = useStore($uiState).layout
 +  const [view, setView] = useState<View>('commands')
 +  const [filter, setFilter] = useState('')
 +  const [activeIdx, setActiveIdx] = useState(0)
@@ -833,10 +874,15 @@ index 0000000000..3adc12ff0d
 +    void (async () => {
 +      const out: Record<string, string> = {}
 +
-+      for (const k of ['display.layout', 'show_reasoning', 'tui_theme']) {
++      for (const k of ['skin', 'reasoning', 'theme']) {
 +        try {
-+          const r = (await rpc('config.get', { key: k })) as { value?: unknown } | null
-+          out[k] = String(r?.value ?? '')
++          const r = (await rpc('config.get', { key: k })) as {
++            display?: unknown
++            value?: unknown
++          } | null
++
++          // `reasoning` reports {value: effort, display: show|hide}.
++          out[k] = k === 'reasoning' ? String(r?.display ?? '') : String(r?.value ?? '')
 +        } catch {
 +          out[k] = ''
 +        }
@@ -854,12 +900,12 @@ index 0000000000..3adc12ff0d
 +      try {
 +        const [s, m] = await Promise.all([
 +          rpc('config.get', { key: 'skin' }) as Promise<{ value?: unknown } | null>,
-+          rpc('config.get', { key: 'tui_theme' }) as Promise<{ value?: unknown } | null>
++          rpc('config.get', { key: 'theme' }) as Promise<{ value?: unknown } | null>
 +        ])
 +
 +        const skin = String(s?.value ?? '')
 +        setCurrentSkin(skin)
-+        setValues(prev => ({ ...prev, tui_theme: String(m?.value ?? '') }))
++        setValues(prev => ({ ...prev, theme: String(m?.value ?? '') }))
 +        // Snapshot for Esc-revert + highlight where you are (preview parity).
 +        entrySkinRef.current = skin
 +        const name = themeNameFromSkin(skin)
@@ -885,7 +931,7 @@ index 0000000000..3adc12ff0d
 +    })()
 +  }, [rpc])
 +
-+  const colorMode = values['tui_theme'] || 'auto'
++  const colorMode = values['theme'] || 'auto'
 +  const skinFor = (name: string) => resolveSkin(name, colorMode)
 +
 +  const applyTheme = (name: string) => {
@@ -896,7 +942,7 @@ index 0000000000..3adc12ff0d
 +
 +  const cycleColorMode = () => {
 +    const next = COLOR_MODES[(COLOR_MODES.indexOf(colorMode) + 1) % COLOR_MODES.length] ?? 'auto'
-+    setConfig('tui_theme', next, { tui_theme: next })
++    setConfig('theme', next, { theme: next })
 +    // Re-apply the current theme through the new mode (preview parity).
 +    const name = themeNameFromSkin(currentSkin)
 +
@@ -950,24 +996,20 @@ index 0000000000..3adc12ff0d
 +      }
 +    )
 +  } else if (view === 'settings') {
-+    const layout = values['display.layout'] || 'classic'
 +    rows.push(
 +      {
 +        group: 'Appearance',
 +        items: [
-+          { label: 'Theme', run: () => go('themes'), value: currentSkin || values['skin'] },
++          { label: 'Theme', run: () => go('themes'), value: values['skin'] || currentSkin },
 +          {
 +            label: 'Color mode',
 +            run: cycleColorMode,
-+            value: values['tui_theme'] || 'auto'
++            value: values['theme'] || 'auto'
 +          },
 +          {
 +            label: 'Layout',
-+            run: () =>
-+              setConfig('display.layout', layout === 'opencode' ? 'classic' : 'opencode', {
-+                'display.layout': layout === 'opencode' ? 'classic' : 'opencode'
-+              }),
-+            value: layout
++            run: () => setConfig('layout', uiLayout === 'opencode' ? 'classic' : 'opencode'),
++            value: uiLayout
 +          }
 +        ]
 +      },
@@ -978,10 +1020,10 @@ index 0000000000..3adc12ff0d
 +          {
 +            label: 'Reasoning',
 +            run: () => {
-+              const next = values['show_reasoning'] === 'false' ? 'true' : 'false'
-+              setConfig('show_reasoning', next, { show_reasoning: next })
++              const next = values['reasoning'] === 'hide' ? 'show' : 'hide'
++              setConfig('reasoning', next, { reasoning: next })
 +            },
-+            value: values['show_reasoning'] === 'false' ? 'off' : 'on'
++            value: values['reasoning'] === 'hide' ? 'off' : 'on'
 +          }
 +        ]
 +      }
