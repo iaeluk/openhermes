@@ -1,0 +1,960 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="opencode-escuro">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hermes com cara de opencode (prévia)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  [data-theme="opencode-escuro"] {
+    --bg: #0b0b0c; --fg: #e9e9ea; --muted: #8b8b94;
+    --border: #333338; --accent: #f2f2f3; --box: #101013;
+    --good: #7ddf9a; --sel: #1d1d22;
+  }
+  [data-theme="opencode-claro"] {
+    --bg: #f4f4f1; --fg: #1b1b1c; --muted: #6f6f76;
+    --border: #d4d4d0; --accent: #1b1b1c; --box: #fafaf8;
+    --good: #1d7a3a; --sel: #e8e8e4;
+  }
+  [data-theme="omarchy"] {
+    --bg: #14110b; --fg: #ece3d2; --muted: #9a8c6f;
+    --border: #4a3f2a; --accent: #d4a24e; --box: #1a1610;
+    --good: #8fd694; --sel: #241e13;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font-family: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 15px; line-height: 1.5;
+    display: flex; flex-direction: column; height: 100vh; overflow: hidden; padding-bottom: 12px;
+  }
+  .tabs {
+    display: none; justify-content: flex-start; align-items: center; gap: 6px; padding: 8px 14px;
+    color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden;
+  }
+  .tabs.show { display: flex; }
+  main { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px 12px 20px; }
+  .logo { text-align: center; margin: 0 0 6px; font-size: clamp(9px, 1.9vw, 15px); line-height: 1.25; }
+  .update { color: var(--muted); font-size: 13px; margin-bottom: 18px; }
+  .composer { width: min(71ch, 94vw); }
+  .crow { display: flex; }
+  .gutter { color: var(--fg); padding-right: 2ch; user-select: none; }
+  .crow .txt { flex: 1; min-width: 0; }
+  .dim { color: var(--muted); }
+  .composer input {
+    width: 100%; background: transparent; border: 0; outline: 0;
+    color: var(--fg); font: inherit; padding: 0;
+  }
+  .composer input::placeholder { color: var(--ph); opacity: 1; }
+  .model-line { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .slashpop { max-height: 264px; overflow-y: auto; margin: 2px 0 8px; scrollbar-width: thin; }
+  .slashpop::-webkit-scrollbar { width: 4px; }
+  .slashpop::-webkit-scrollbar-thumb { background: var(--border); }
+  .srow { display: flex; gap: 24px; padding: 2px 4px; cursor: pointer; }
+  .srow .scmd { color: var(--fg); white-space: nowrap; }
+  .srow .sdesc { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .srow.active { background: var(--select); }
+  .srow.active span { color: var(--select-fg); font-weight: 700; }
+  .base-row { display: flex; }
+  .base-fill { flex: 1; overflow: hidden; white-space: nowrap; }
+  .hints { display: flex; justify-content: space-between; color: var(--muted); font-size: 13px; margin-top: 2px; width: min(71ch, 94vw); }
+  .hints b { color: var(--fg); font-weight: normal; }
+  .themes { display: flex; gap: 8px; margin-top: 16px; font-size: 13px; color: var(--muted); align-items: center; flex-wrap: wrap; justify-content: center; }
+  .themes button, .conv-toggle {
+    font: inherit; font-size: 13px; background: var(--box); color: var(--fg);
+    border: 1px solid var(--border); border-radius: 6px; padding: 2px 10px; cursor: pointer;
+  }
+  .themes button[aria-pressed="true"] { border-color: var(--accent); }
+  .conv { width: min(71ch, 94vw); margin-top: 18px; display: none; }
+  .conv.open { display: block; }
+  body.chatting main { justify-content: flex-start; padding-bottom: 210px; }
+  body.chatting #welcome { display: none; }
+  #dock { display: flex; flex-direction: column; align-items: center; width: 100%; }
+  body.chatting .conv { order: -1; }
+  body.chatting main { align-items: stretch; }
+  body.chatting .conv { width: auto; margin: 0; padding: 4px 2ch 0; }
+  body.chatting .ubox { width: auto; margin: 10px 0; }
+  body.chatting #dock { align-items: stretch; padding-left: 2ch; padding-right: 2ch; }
+  body.chatting .composer { width: auto; }
+  body.chatting .hints { width: auto; }
+  body.chatting #dock { position: fixed; bottom: 48px; left: 0; right: 0; background: var(--bg); padding: 10px 2ch 14px; }
+  .ubox { width: min(71ch, 94vw); margin: 10px 0; }
+  .thinking { color: var(--muted); font-size: 13px; margin: 6px 0; }
+  .toolline { margin: 6px 0; }
+  .answer { margin: 6px 0; }
+  .meta { color: var(--muted); font-size: 13px; margin: 8px 0 16px; }
+  .ubox, .composer { background: var(--band); border-left: 3px solid var(--accent); padding: 8px 14px; }
+  .ubox .gutter, .composer .gutter, .ubox .base-row, .composer .base-row { display: none; }
+  .ag { color: var(--agent); font-weight: 700; }
+  .var { color: var(--variant); font-weight: 700; }
+  .palette .desc { color: var(--muted); font-weight: 400; }
+  .palette li.active .desc { color: var(--select-fg); }
+  .statusbar b { color: var(--fg); font-weight: 700; }
+  .tabs .tab { cursor: pointer; color: var(--muted); padding: 2px 6px 2px 12px; border-radius: 4px; white-space: nowrap; }
+  .tabs .tab.active { background: var(--band); color: var(--fg); font-weight: 700; }
+  .tabs .tab .tab-x { visibility: hidden; margin-left: 10px; padding: 0 7px; border-radius: 4px; color: var(--muted); font-weight: 400; }
+  .tabs .tab.active .tab-x, .tabs .tab:hover .tab-x { visibility: visible; }
+  .tabs .tab .tab-x:hover { background: var(--sel); color: var(--fg); }
+  .tabs #newTab { cursor: pointer; }
+  .msg { margin: 10px 0; }
+  .who { color: var(--muted); font-size: 13px; }
+  .thinking { color: var(--muted); font-size: 13px; }
+  details.tool {
+    border: 1px solid var(--border); border-radius: 6px;
+    margin: 8px 0; background: var(--box);
+  }
+  details.tool summary { cursor: pointer; padding: 4px 10px; list-style: none; }
+  details.tool summary::-webkit-details-marker { display: none; }
+  details.tool .body { padding: 4px 10px 8px; color: var(--muted); font-size: 13px; }
+  .diff-add { color: var(--good); }
+  .statusbar {
+    display: flex; justify-content: space-between; padding: 8px 14px;
+    color: var(--muted); font-size: 13px; border-top: 1px solid var(--border);
+    position: sticky; bottom: 0; background: var(--bg);
+  }
+  .palette-back {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,.55);
+    align-items: flex-start; justify-content: center; padding-top: 12vh; z-index: 10;
+  }
+  .palette-back.open { display: flex; }
+  .palette {
+    width: min(60ch, 92vw); background: var(--panel); color: var(--fg);
+    overflow: hidden; box-shadow: 0 18px 60px rgba(0,0,0,.5);
+  }
+  .palette header { display: flex; justify-content: space-between; padding: 8px 12px; color: var(--muted); font-size: 13px; }
+  .palette input {
+    width: 100%; background: transparent; border: 0; border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border); outline: 0; color: var(--fg); font: inherit; padding: 8px 12px;
+  }
+  .palette ul { list-style: none; margin: 0; padding: 4px 0 8px; max-height: 44vh; overflow: auto; }
+  .palette li {
+    display: flex; justify-content: space-between; gap: 12px;
+    padding: 5px 12px; cursor: pointer;
+  }
+  .palette li.active { background: var(--select); }
+  .palette li.active span { color: var(--select-fg); font-weight: 700; }
+  .palette .key { color: var(--muted); font-size: 13px; white-space: nowrap; }
+  .palette .group { color: var(--accent); font-weight: 700; font-size: 12px; padding: 8px 10px 2px; }
+  #logoText { text-align: center; font-size: clamp(28px, 6vw, 54px); font-weight: 700; letter-spacing: .35em; text-indent: .35em; text-transform: uppercase; margin: 0 0 10px; }
+  #nameInput { width: calc(100% - 12px); margin: 2px 6px 8px; background: transparent; border: 1px solid var(--border); border-radius: 6px; outline: 0; color: var(--fg); font: inherit; padding: 8px 10px; }
+  .toast {
+    position: fixed; bottom: 52px; left: 50%; transform: translateX(-50%);
+    background: var(--box); border: 1px solid var(--border); color: var(--fg);
+    font-size: 13px; padding: 4px 14px; border-radius: 20px; display: none;
+  }
+  .toast.show { display: block; }
+  kbd { border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="tabs"><span>Sessão atual · hermes-opencode-preview</span><span>+ New session</span></div>
+
+<main>
+  <div id="welcome">
+  <pre class="logo">█  █ █▀▀▀ █▀▀█ █▄ ▄█ █▀▀▀ █▀▀▀
+████ █▀▀  █▀▀▀ █ ▀█ █▀▀  ▀▀▀█
+█  █ ▀▀▀▀ ▀  ▀ ▀  ▀ ▀▀▀▀ ▀▀▀▀</pre>
+  <div id="logoText" hidden></div>
+  </div>
+
+  <div id="dock">
+  <div class="composer" aria-label="Caixa de entrada">
+    <div class="slashpop" id="slashpop" hidden></div>
+
+    <div class="crow"><span class="gutter">┃</span><span class="txt"><input id="box" placeholder="Peça qualquer coisa… &quot;Explique este repositório&quot;" autocomplete="off"></span></div>
+
+    <div class="crow"><span class="gutter">┃</span><span class="txt model-line">SMART · Muse Spark 1.3 Contributor OpenCode Go · max</span></div>
+    <div class="base-row"><span class="gutter">╹</span><span class="base-fill">▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀</span></div>
+  </div>
+  <div class="hints"><span>~</span><span><b>shift+tab</b> <span class="dim">agentes</span>&nbsp;&nbsp;<b>ctrl+p</b> <span class="dim">comandos</span></span></div>
+  </div>
+
+  <div class="conv" id="conv" aria-label="Exemplo de conversa">
+    <div class="ubox" aria-label="Sua mensagem">
+  
+      <div class="crow"><span class="gutter">┃</span><span class="txt">onde fica o loop principal do TUI?</span></div>
+  
+      <div class="base-row"><span class="gutter">╹</span><span class="base-fill">▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀</span></div>
+    </div>
+    <div class="thinking">Checking the Ink TUI entrypoint.</div>
+    <div class="toolline">→ Explored: 2 reads</div>
+    <div class="answer">O entrypoint do Ink TUI é ui-tui/src/entry.tsx. O CLI clássico monta o layout em cli_tui_mixin.py.</div>
+    <div class="meta"><span class="ag">SMART</span> · muse-spark-1.3-contributor · 1.8s · 42.5 tok/s</div>
+    <div id="live"></div>
+  </div>
+</main>
+
+<div class="statusbar"><span id="statLeft">⊙ 61 ferramentas · 120 skills</span><span id="statRight">0.22.2</span></div>
+
+<div class="palette-back" id="pback">
+  <div class="palette" role="dialog" aria-label="Comandos">
+    <header><span id="ptitle">Commands</span><span>esc</span></header>
+    <input id="psearch" placeholder="Search" autocomplete="off">
+    <div id="pbody"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  const pback = document.getElementById('pback');
+  const psearch = document.getElementById('psearch');
+  const ptitle = document.getElementById('ptitle');
+  const pbody = document.getElementById('pbody');
+  const toast = document.getElementById('toast');
+  const box = document.getElementById('box');
+  const conv = document.getElementById('conv');
+  const live = document.getElementById('live');
+  const mainEl = document.querySelector('main');
+  let toastTimer = null;
+
+  function showToast(msg) {
+    toast.textContent = msg;
+    toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast.classList.remove('show'), 2200);
+  }
+
+  const THEME_DATA = {
+    "opencode": {
+      dark: {bg:"#0a0a0a", fg:"#eeeeee", muted:"#808080", accent:"#9d7cd8", select:"#fab283", agent:"#5c9cf5", variant:"#f5a742", panel:"#141414", band:"#101010"},
+      light: {bg:"#ffffff", fg:"#1a1a1a", muted:"#8a8a8a", accent:"#d68c27", select:"#3b7dd8", agent:"#7b5bb6", variant:"#d68c27", panel:"#fafafa", band:"#f5f5f5"},
+    },
+    "aura": {
+      dark: {bg:"#0f0f0f", fg:"#edecee", muted:"#6d6d6d", accent:"#a277ff", select:"#a277ff", agent:"#f694ff", variant:"#ffca85", panel:"#15141b", band:"#15141b"},
+      light: {bg:"#0f0f0f", fg:"#edecee", muted:"#6d6d6d", accent:"#a277ff", select:"#a277ff", agent:"#f694ff", variant:"#ffca85", panel:"#15141b", band:"#15141b"},
+    },
+    "ayu": {
+      dark: {bg:"#0B0E14", fg:"#BFBDB6", muted:"#565B66", accent:"#E6B450", select:"#59C2FF", agent:"#D2A6FF", variant:"#E6B673", panel:"#0F131A", band:"#0D1017"},
+      light: {bg:"#0B0E14", fg:"#BFBDB6", muted:"#565B66", accent:"#E6B450", select:"#59C2FF", agent:"#D2A6FF", variant:"#E6B673", panel:"#0F131A", band:"#0D1017"},
+    },
+    "carbonfox": {
+      dark: {bg:"#161616", fg:"#f2f4f8", muted:"#7d848f", accent:"#ff7eb6", select:"#33b1ff", agent:"#78a9ff", variant:"#f1c21b", panel:"#1a1a1a", band:"#1e1e1e"},
+      light: {bg:"#ffffff", fg:"#161616", muted:"#6f6f6f", accent:"#9f1853", select:"#0043ce", agent:"#0043ce", variant:"#007d79", panel:"#f4f4f4", band:"#f4f4f4"},
+    },
+    "catppuccin": {
+      dark: {bg:"#1e1e2e", fg:"#cdd6f4", muted:"#9399b2", accent:"#f5c2e7", select:"#89b4fa", agent:"#cba6f7", variant:"#f9e2af", panel:"#181825", band:"#11111b"},
+      light: {bg:"#eff1f5", fg:"#4c4f69", muted:"#7c7f93", accent:"#ea76cb", select:"#1e66f5", agent:"#8839ef", variant:"#df8e1d", panel:"#e6e9ef", band:"#dce0e8"},
+    },
+    "catppuccin-frappe": {
+      dark: {bg:"#303446", fg:"#c6d0f5", muted:"#949cb8", accent:"#f4b8e4", select:"#8da4e2", agent:"#ca9ee6", variant:"#e5c890", panel:"#292c3c", band:"#232634"},
+      light: {bg:"#303446", fg:"#c6d0f5", muted:"#949cb8", accent:"#f4b8e4", select:"#8da4e2", agent:"#ca9ee6", variant:"#e5c890", panel:"#292c3c", band:"#232634"},
+    },
+    "catppuccin-macchiato": {
+      dark: {bg:"#24273a", fg:"#cad3f5", muted:"#939ab7", accent:"#f5bde6", select:"#8aadf4", agent:"#c6a0f6", variant:"#eed49f", panel:"#1e2030", band:"#181926"},
+      light: {bg:"#24273a", fg:"#cad3f5", muted:"#939ab7", accent:"#f5bde6", select:"#8aadf4", agent:"#c6a0f6", variant:"#eed49f", panel:"#1e2030", band:"#181926"},
+    },
+    "cobalt2": {
+      dark: {bg:"#193549", fg:"#ffffff", muted:"#adb7c9", accent:"#2affdf", select:"#0088ff", agent:"#9a5feb", variant:"#ffc600", panel:"#122738", band:"#1f4662"},
+      light: {bg:"#ffffff", fg:"#193549", muted:"#5c6b7d", accent:"#00acc1", select:"#0066cc", agent:"#7c4dff", variant:"#ff9800", panel:"#f5f7fa", band:"#e8ecf1"},
+    },
+    "cursor": {
+      dark: {bg:"#181818", fg:"#e4e4e4", muted:"#e4e4e4", accent:"#88c0d0", select:"#88c0d0", agent:"#81a1c1", variant:"#f1b467", panel:"#141414", band:"#262626"},
+      light: {bg:"#fcfcfc", fg:"#141414", muted:"#141414", accent:"#6f9ba6", select:"#6f9ba6", agent:"#3c7cab", variant:"#db704b", panel:"#f3f3f3", band:"#ededed"},
+    },
+    "dracula": {
+      dark: {bg:"#282a36", fg:"#f8f8f2", muted:"#6272a4", accent:"#8be9fd", select:"#bd93f9", agent:"#ff79c6", variant:"#f1fa8c", panel:"#21222c", band:"#44475a"},
+      light: {bg:"#f8f8f2", fg:"#282a36", muted:"#6272a4", accent:"#8be9fd", select:"#bd93f9", agent:"#ff79c6", variant:"#f1fa8c", panel:"#e8e8e2", band:"#d8d8d2"},
+    },
+    "everforest": {
+      dark: {bg:"#2d353b", fg:"#d3c6aa", muted:"#7a8478", accent:"#d699b6", select:"#a7c080", agent:"#7fbbb3", variant:"#e69875", panel:"#333c43", band:"#343f44"},
+      light: {bg:"#fdf6e3", fg:"#5c6a72", muted:"#a6b0a0", accent:"#df69ba", select:"#8da101", agent:"#3a94c5", variant:"#f57d26", panel:"#efebd4", band:"#f4f0d9"},
+    },
+    "flexoki": {
+      dark: {bg:"#100F0F", fg:"#CECDC3", muted:"#6F6E69", accent:"#8B7EC8", select:"#DA702C", agent:"#4385BE", variant:"#DA702C", panel:"#1C1B1A", band:"#282726"},
+      light: {bg:"#FFFCF0", fg:"#100F0F", muted:"#6F6E69", accent:"#BC5215", select:"#205EA6", agent:"#5E409D", variant:"#BC5215", panel:"#F2F0E5", band:"#E6E4D9"},
+    },
+    "github": {
+      dark: {bg:"#0d1117", fg:"#c9d1d9", muted:"#8b949e", accent:"#39c5cf", select:"#58a6ff", agent:"#bc8cff", variant:"#e3b341", panel:"#010409", band:"#161b22"},
+      light: {bg:"#ffffff", fg:"#24292f", muted:"#57606a", accent:"#1b7c83", select:"#0969da", agent:"#8250df", variant:"#9a6700", panel:"#f6f8fa", band:"#f0f3f6"},
+    },
+    "gruvbox": {
+      dark: {bg:"#282828", fg:"#ebdbb2", muted:"#928374", accent:"#8ec07c", select:"#83a598", agent:"#d3869b", variant:"#fe8019", panel:"#3c3836", band:"#504945"},
+      light: {bg:"#fbf1c7", fg:"#3c3836", muted:"#7c6f64", accent:"#427b58", select:"#076678", agent:"#8f3f71", variant:"#af3a03", panel:"#ebdbb2", band:"#d5c4a1"},
+    },
+    "kanagawa": {
+      dark: {bg:"#1F1F28", fg:"#DCD7BA", muted:"#727169", accent:"#D27E99", select:"#7E9CD8", agent:"#957FB8", variant:"#D7A657", panel:"#2A2A37", band:"#363646"},
+      light: {bg:"#F2E9DE", fg:"#54433A", muted:"#9E9389", accent:"#D27E99", select:"#2D4F67", agent:"#957FB8", variant:"#D7A657", panel:"#EAE4D7", band:"#E3DCD2"},
+    },
+    "lucent-orng": {
+      dark: {bg:"#101010", fg:"#eeeeee", muted:"#808080", accent:"#FFF7F1", select:"#EC5B2B", agent:"#EE7948", variant:"#EC5B2B", panel:"#1a1a1a", band:"#1a1a1a"},
+      light: {bg:"#ffffff", fg:"#1a1a1a", muted:"#8a8a8a", accent:"#c94d24", select:"#EC5B2B", agent:"#EE7948", variant:"#EC5B2B", panel:"#f7f2ec", band:"#f7f2ec"},
+    },
+    "material": {
+      dark: {bg:"#263238", fg:"#eeffff", muted:"#546e7a", accent:"#89ddff", select:"#82aaff", agent:"#c792ea", variant:"#ffcb6b", panel:"#1e272c", band:"#37474f"},
+      light: {bg:"#fafafa", fg:"#263238", muted:"#90a4ae", accent:"#39adb5", select:"#6182b8", agent:"#7c4dff", variant:"#ffb300", panel:"#f5f5f5", band:"#e7e7e8"},
+    },
+    "matrix": {
+      dark: {bg:"#0a0e0a", fg:"#62ff94", muted:"#8ca391", accent:"#c770ff", select:"#2eff6a", agent:"#00efff", variant:"#e6ff57", panel:"#0e130d", band:"#141c12"},
+      light: {bg:"#eef3ea", fg:"#203022", muted:"#748476", accent:"#c770ff", select:"#1cc24b", agent:"#24f6d9", variant:"#e6ff57", panel:"#e4ebe1", band:"#dae1d7"},
+    },
+    "mercury": {
+      dark: {bg:"#171721", fg:"#dddde5", muted:"#9d9da8", accent:"#8da4f5", select:"#8da4f5", agent:"#a7b6f8", variant:"#fc9b6f", panel:"#10101a", band:"#272735"},
+      light: {bg:"#ffffff", fg:"#363644", muted:"#70707d", accent:"#8da4f5", select:"#5266eb", agent:"#465bd1", variant:"#a44200", panel:"#fbfcfd", band:"#f4f5f9"},
+    },
+    "monokai": {
+      dark: {bg:"#272822", fg:"#f8f8f2", muted:"#75715e", accent:"#a6e22e", select:"#66d9ef", agent:"#ae81ff", variant:"#e6db74", panel:"#1e1f1c", band:"#3e3d32"},
+      light: {bg:"#fafafa", fg:"#272822", muted:"#75715e", accent:"#a6e22e", select:"#66d9ef", agent:"#ae81ff", variant:"#fd971f", panel:"#f0f0f0", band:"#e0e0e0"},
+    },
+    "nightowl": {
+      dark: {bg:"#011627", fg:"#d6deeb", muted:"#5f7e97", accent:"#c792ea", select:"#82AAFF", agent:"#7fdbca", variant:"#ecc48d", panel:"#0b253a", band:"#0b253a"},
+      light: {bg:"#011627", fg:"#d6deeb", muted:"#5f7e97", accent:"#c792ea", select:"#82AAFF", agent:"#7fdbca", variant:"#ecc48d", panel:"#0b253a", band:"#0b253a"},
+    },
+    "nord": {
+      dark: {bg:"#2E3440", fg:"#ECEFF4", muted:"#8B95A7", accent:"#8FBCBB", select:"#88C0D0", agent:"#81A1C1", variant:"#D08770", panel:"#3B4252", band:"#434C5E"},
+      light: {bg:"#ECEFF4", fg:"#2E3440", muted:"#3B4252", accent:"#8FBCBB", select:"#5E81AC", agent:"#81A1C1", variant:"#D08770", panel:"#E5E9F0", band:"#D8DEE9"},
+    },
+    "one-dark": {
+      dark: {bg:"#282c34", fg:"#abb2bf", muted:"#5c6370", accent:"#56b6c2", select:"#61afef", agent:"#c678dd", variant:"#e5c07b", panel:"#21252b", band:"#353b45"},
+      light: {bg:"#fafafa", fg:"#383a42", muted:"#a0a1a7", accent:"#0184bc", select:"#4078f2", agent:"#a626a4", variant:"#c18401", panel:"#f0f0f1", band:"#eaeaeb"},
+    },
+    "orng": {
+      dark: {bg:"#0a0a0a", fg:"#eeeeee", muted:"#808080", accent:"#FFF7F1", select:"#EC5B2B", agent:"#EE7948", variant:"#EC5B2B", panel:"#141414", band:"#1e1e1e"},
+      light: {bg:"#ffffff", fg:"#1a1a1a", muted:"#8a8a8a", accent:"#c94d24", select:"#EC5B2B", agent:"#EE7948", variant:"#EC5B2B", panel:"#FFF7F1", band:"#f5f0eb"},
+    },
+    "osaka-jade": {
+      dark: {bg:"#111c18", fg:"#C1C497", muted:"#53685B", accent:"#549e6a", select:"#2DD5B7", agent:"#D2689C", variant:"#E5C736", panel:"#1a2520", band:"#23372B"},
+      light: {bg:"#F6F5DD", fg:"#111c18", muted:"#53685B", accent:"#3d7a52", select:"#1faa90", agent:"#a8527a", variant:"#b5a020", panel:"#E8E7CC", band:"#D5D4B8"},
+    },
+    "palenight": {
+      dark: {bg:"#292d3e", fg:"#a6accd", muted:"#676e95", accent:"#89ddff", select:"#82aaff", agent:"#c792ea", variant:"#ffcb6b", panel:"#1e2132", band:"#32364a"},
+      light: {bg:"#fafafa", fg:"#292d3e", muted:"#8796b0", accent:"#00acc1", select:"#4976eb", agent:"#a854f2", variant:"#ffb300", panel:"#f5f5f5", band:"#e7e7e8"},
+    },
+    "rosepine": {
+      dark: {bg:"#191724", fg:"#e0def4", muted:"#6e6a86", accent:"#ebbcba", select:"#9ccfd8", agent:"#c4a7e7", variant:"#f6c177", panel:"#1f1d2e", band:"#26233a"},
+      light: {bg:"#faf4ed", fg:"#575279", muted:"#9893a5", accent:"#d7827e", select:"#31748f", agent:"#907aa9", variant:"#ea9d34", panel:"#fffaf3", band:"#f2e9e1"},
+    },
+    "solarized": {
+      dark: {bg:"#002b36", fg:"#839496", muted:"#586e75", accent:"#2aa198", select:"#268bd2", agent:"#6c71c4", variant:"#b58900", panel:"#073642", band:"#073642"},
+      light: {bg:"#fdf6e3", fg:"#657b83", muted:"#93a1a1", accent:"#2aa198", select:"#268bd2", agent:"#6c71c4", variant:"#b58900", panel:"#eee8d5", band:"#eee8d5"},
+    },
+    "synthwave84": {
+      dark: {bg:"#262335", fg:"#ffffff", muted:"#848bbd", accent:"#b084eb", select:"#36f9f6", agent:"#ff7edb", variant:"#fede5d", panel:"#1e1a29", band:"#2a2139"},
+      light: {bg:"#fafafa", fg:"#262335", muted:"#5c5c8a", accent:"#9c27b0", select:"#00bcd4", agent:"#e91e63", variant:"#ff9800", panel:"#f5f5f5", band:"#eeeeee"},
+    },
+    "tokyonight": {
+      dark: {bg:"#1a1b26", fg:"#c8d3f5", muted:"#828bb8", accent:"#ff966c", select:"#82aaff", agent:"#c099ff", variant:"#ff966c", panel:"#1e2030", band:"#222436"},
+      light: {bg:"#e1e2e7", fg:"#3760bf", muted:"#8990a3", accent:"#b15c00", select:"#2e7de9", agent:"#9854f1", variant:"#b15c00", panel:"#d5d6db", band:"#c8c9ce"},
+    },
+    "vercel": {
+      dark: {bg:"#000000", fg:"#EDEDED", muted:"#878787", accent:"#8E4EC6", select:"#0070F3", agent:"#52A8FF", variant:"#FFB224", panel:"#1A1A1A", band:"#292929"},
+      light: {bg:"#FFFFFF", fg:"#171717", muted:"#666666", accent:"#8E4EC6", select:"#0070F3", agent:"#0062D1", variant:"#FF9500", panel:"#FAFAFA", band:"#EAEAEA"},
+    },
+    "vesper": {
+      dark: {bg:"#101010", fg:"#FFFFFF", muted:"#A0A0A0", accent:"#FFC799", select:"#FFC799", agent:"#99FFE4", variant:"#FFC799", panel:"#101010", band:"#101010"},
+      light: {bg:"#FFFFFF", fg:"#101010", muted:"#A0A0A0", accent:"#FFC799", select:"#FFC799", agent:"#99FFE4", variant:"#FFC799", panel:"#F0F0F0", band:"#E0E0E0"},
+    },
+    "zenburn": {
+      dark: {bg:"#3f3f3f", fg:"#dcdccc", muted:"#9f9f9f", accent:"#93e0e3", select:"#8cd0d3", agent:"#dc8cc3", variant:"#f0dfaf", panel:"#4f4f4f", band:"#5f5f5f"},
+      light: {bg:"#ffffef", fg:"#3f3f3f", muted:"#6f6f6f", accent:"#5f8f8f", select:"#5f7f8f", agent:"#8f5f8f", variant:"#8f8f5f", panel:"#f5f5e5", band:"#ebebdb"},
+    },
+  };
+  const THEMES = Object.entries(THEME_DATA).map(([name, modes]) => ({name, modes}));
+
+  const AGENTS = ['SMART', 'PLAN', 'YOLO'];
+
+  const state = {
+    theme: localStorage.getItem('hx-theme') || 'opencode',
+    colorMode: 'system',
+    layout: 'opencode',
+    interface: 'tui',
+    agent: 'SMART',
+    model: 'Muse Spark 1.3 Contributor',
+    provider: 'OpenCode Go',
+    voice: 'off',
+    reasoning: 'off',
+    name: localStorage.getItem('hx-name') || 'Hermes'
+  };
+
+  function mix(h1, h2, t) {
+    const p = h => [1, 3, 5].map(i => parseInt(h.substr(i, 2), 16));
+    const a = p(h1), b = p(h2);
+    return '#' + a.map((v, i) => Math.round(v + (b[i] - v) * t).toString(16).padStart(2, '0')).join('');
+  }
+  function currentMode() {
+    if (state.colorMode !== 'system') return state.colorMode;
+    return (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark';
+  }
+  function applyTheme(name) {
+    const base = THEMES.find(t => t.name === name) || THEMES.find(t => t.name === 'opencode');
+    state.theme = base.name;
+    localStorage.setItem('hx-theme', base.name);
+    const s = base.modes[currentMode()] || base.modes.dark;
+    const r = document.documentElement.style;
+    r.setProperty('--bg', s.bg);
+    r.setProperty('--fg', s.fg);
+    r.setProperty('--accent', s.accent);
+    r.setProperty('--box', s.bg);
+    r.setProperty('--muted', s.muted);
+    r.setProperty('--border', mix(s.accent, s.bg, .3));
+    r.setProperty('--sel', mix(s.accent, s.bg, .16));
+    r.setProperty('--panel', s.panel);
+    r.setProperty('--band', s.band);
+    r.setProperty('--agent', s.agent);
+    r.setProperty('--variant', s.variant);
+    r.setProperty('--select', s.select);
+    const _lum = (() => { const n = parseInt(s.select.slice(1), 16); return (0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255; })();
+    r.setProperty('--select-fg', _lum > 0.6 ? '#0a0a0a' : '#ffffff');
+    r.setProperty('--ph', mix(s.fg, s.bg, .38));
+  }
+  if (window.matchMedia) window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => { if (state.colorMode === 'system') applyTheme(state.theme); });
+  function syncModelLine() {
+    document.querySelector('.composer .model-line').innerHTML = '<span class="ag">' + escHtml(state.agent) + '</span> · ' + escHtml(state.model) + ' ' + escHtml(state.provider) + ' · <span class="var">max</span>';
+  }
+  function cycleAgent() {
+    state.agent = AGENTS[(AGENTS.indexOf(state.agent) + 1) % AGENTS.length];
+    syncModelLine();
+    showToast('agente: ' + state.agent + (state.agent === 'YOLO' ? ' (aprova tudo, sem pedir)' : state.agent === 'PLAN' ? ' (envia como /plan, não executa)' : ' (aprova com bom senso)'));
+  }
+  function setName(v) {
+    state.name = (v || '').trim() || 'Hermes';
+    localStorage.setItem('hx-name', state.name);
+    const pre = document.querySelector('.logo');
+    const lt = document.getElementById('logoText');
+    if (state.name.toLowerCase() === 'hermes') { pre.hidden = false; lt.hidden = true; }
+    else { pre.hidden = true; lt.hidden = false; lt.textContent = state.name; }
+  }
+  function settingValue(key) { return key === 'theme' ? state.theme : state[key]; }
+
+  const COMMANDS = [
+    ['group', 'Suggested'],
+    ['cmd', 'Switch session', 'ctrl+x l', 'sessions'],
+    ['cmd', 'Switch model', 'ctrl+x m', 'models'],
+    ['cmd', 'Open settings', '', 'settings'],
+    ['group', 'Session'],
+    ['cmd', 'Switch session', 'ctrl+x l', 'sessions'],
+    ['cmd', 'New session', 'ctrl+x n', 'nova'],
+    ['cmd', 'Clear session', '', 'limpar'],
+    ['cmd', 'Open session or project', 'ctrl+o', 'projeto'],
+    ['cmd', 'Close tab', 'ctrl+x w', 'fechar'],
+    ['cmd', 'Reopen closed tab', 'ctrl+shift+t', 'reabrir'],
+    ['cmd', 'Open editor', 'ctrl+x e', 'editor'],
+    ['cmd', 'Manage workspaces', '', 'workspaces'],
+    ['cmd', 'Ask a side question', '', 'side', 'One-shot answer from the session'],
+    ['group', 'Agent'],
+    ['cmd', 'Switch model', 'ctrl+x m', 'models'],
+    ['cmd', 'Switch agent', 'ctrl+x a', 'agent'],
+    ['cmd', 'MCP servers', '', 'mcp'],
+    ['cmd', 'Variant cycle', 'ctrl+t', 'variant'],
+    ['cmd', 'Switch model variant', '', 'variantv'],
+    ['group', 'Integration'],
+    ['cmd', 'Connect an integration', '', 'connect'],
+    ['group', 'System'],
+    ['cmd', 'Show release highlights', '', 'highlights'],
+    ['cmd', 'Open settings', '', 'settings'],
+    ['cmd', 'View status', 'ctrl+x s', 'status'],
+    ['cmd', 'Update OpenCode', '', 'update'],
+    ['cmd', 'Pair device', '', 'pair'],
+    ['cmd', 'Reload configuration', '', 'reload'],
+    ['cmd', 'View debug info', '', 'debug'],
+    ['cmd', 'Switch theme', '', 'themes'],
+    ['group', 'Help'],
+    ['cmd', 'Open docs', '', 'docs'],
+    ['cmd', 'Exit the app', 'ctrl+c, ctrl+d, ctrl+x q', 'exit'],
+    ['cmd', 'Toggle console', '', 'console'],
+    ['cmd', 'Usage statistics', '', 'usage'],
+    ['cmd', 'Plugins', '', 'plugins'],
+    ['group', 'Prompt'],
+    ['cmd', 'Queue prompt', 'ctrl+x enter', 'queue'],
+    ['cmd', 'Skills', '', 'skills'],
+    ['group', 'Appearance'],
+    ['cmd', 'Trocar tema', '', 'themes'],
+    ['cmd', 'Modo de cor', '', 'colormode'],
+    ['cmd', 'Mudar nome', '', 'name']
+  ];
+  const MODEL_ROWS = [
+    ['group', 'Recent'],
+    ['model', 'Muse Spark 1.3 Contributor', 'OpenCode Go', 'OpenCode Go'],
+    ['model', 'Big Pickle', 'OpenCode · Free', 'OpenCode Go'],
+    ['model', 'Qwythos 9B', 'LM Studio · Free', 'LM Studio'],
+    ['model', 'Bonsai 27B', 'LM Studio · Free', 'LM Studio'],
+    ['group', 'OpenCode Go'],
+    ['model', 'MiniMax M3.1 Flash', 'Free', 'OpenCode Go'],
+    ['model', 'Beam', 'Free', 'OpenCode Go'],
+    ['model', 'LongCat 2.5 Preview', 'Free', 'OpenCode Go'],
+    ['model', 'Gemini 4 Argon', 'Contributor', 'OpenCode Go'],
+    ['model', 'Claude Haiku 5.5', '', 'OpenCode Go'],
+    ['model', 'GPT-6 Luna', '', 'OpenCode Go'],
+    ['model', 'MiMo-V2.6-Flash', '', 'OpenCode Go']
+  ];
+  const SESSION_ROWS = [
+    ['group', 'Hoje'],
+    ['session', 'Estudo do layout opencode'],
+    ['group', 'Sex'],
+    ['session', 'Ajustes de preview']
+  ];
+  const SETTING_ROWS = [
+    ['group', 'Aparência'],
+    ['set', 'Tema', 'theme'],
+    ['set', 'Modo de cor', 'colorMode'],
+    ['set', 'Layout', 'layout'],
+    ['set', 'Interface', 'interface'],
+    ['group', 'Sessão'],
+    ['set', 'Agente', 'agent'],
+    ['set', 'Modelo', 'model'],
+    ['set', 'Voz', 'voice'],
+    ['set', 'Raciocínio', 'reasoning']
+  ];
+  const CYCLES = {
+    colorMode: ['system', 'light', 'dark'],
+    layout: ['opencode', 'classic'],
+    interface: ['tui', 'cli'],
+    agent: ['SMART', 'PLAN', 'YOLO'],
+    voice: ['off', 'on'],
+    reasoning: ['off', 'on']
+  };
+
+  let stack = [{view: 'commands'}];
+  let items = [];
+  let activeIdx = 0;
+  let prevTheme = null;
+  let themeConfirmed = false;
+
+  function escHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+  function emitSections(list, match, emit, groupFn) {
+    let g = null, buf = [];
+    const flush = () => { if (g !== null && buf.length) { groupFn(g); buf.forEach(emit); } buf = []; };
+    list.forEach(c => {
+      if (c[0] === 'group') { flush(); g = c[1]; }
+      else if (match(c)) buf.push(c);
+    });
+    flush();
+  }
+  function buildItems() {
+    const top = stack[stack.length - 1];
+    const q = (top.view === 'name' ? '' : psearch.value).toLowerCase();
+    items = [];
+    const group = label => items.push({group: label, selectable: false});
+    const emitHere = (list, match, emit) => emitSections(list, match, emit, group);
+    if (top.view === 'commands') {
+      ptitle.textContent = 'Commands';
+      emitHere(COMMANDS, c => ((c[1] + ' ' + (c[4] || '')).toLowerCase().includes(q)), c => {
+        const act = c[3];
+        items.push({selectable: true, label: c[1], hint: c[2], desc: c[4], run: () => {
+          if (act === 'sessions' || act === 'models' || act === 'settings' || act === 'themes' || act === 'name') push(act);
+          else if (act === 'colormode') cycleKey('colorMode');
+          else if (act === 'agent') { closeAll(); cycleAgent(); }
+          else if (act === 'nova') { closeAll(); newTab(); }
+          else if (act === 'limpar') { closeAll(); clearTab(); }
+          else if (act === 'projeto') push('sessions');
+          else if (act === 'fechar') { closeAll(); closeTab(); }
+          else if (act === 'reabrir') { closeAll(); reopenTab(); }
+          else { closeAll(); showToast('prévia: "' + c[1] + '" não executa nada'); }
+        }});
+      });
+    } else if (top.view === 'settings') {
+      ptitle.textContent = 'Settings';
+      emitHere(SETTING_ROWS, c => c[1].toLowerCase().includes(q), c => {
+        const key = c[2];
+        items.push({selectable: true, label: c[1], val: () => settingValue(key), run: () => {
+          if (key === 'theme') push('themes');
+          else if (key === 'model') push('models');
+          else cycleKey(key);
+        }, cycle: d => { if (key !== 'theme' && key !== 'model') cycleKey(key, d); }});
+      });
+      group('change ←/→');
+    } else if (top.view === 'themes') {
+      ptitle.textContent = 'Themes';
+      THEMES.forEach(t => {
+        if (!t.name.includes(q)) return;
+        items.push({selectable: true, theme: t.name, run: () => {
+          themeConfirmed = true;
+          applyTheme(t.name);
+          closeAll();
+          showToast('tema ' + t.name + ' aplicado');
+        }});
+      });
+    } else if (top.view === 'models') {
+      ptitle.textContent = 'Select model';
+      emitHere(MODEL_ROWS, c => (c[1] + ' ' + c[2]).toLowerCase().includes(q), c => {
+        items.push({selectable: true, label: c[1], hint: c[2], model: c[1], run: () => {
+          state.model = c[1];
+          state.provider = c[3] || 'OpenCode Go';
+          syncModelLine();
+          closeAll();
+          showToast('modelo: ' + c[1]);
+        }});
+      });
+      group('Connect an integration ctrl+a   Favorite ctrl+f');
+    } else if (top.view === 'sessions') {
+      ptitle.textContent = 'Sessions';
+      const matchedTabs = tabs.map((t, i) => ({t, i})).filter(({t}) => t.title.toLowerCase().includes(q));
+      if (matchedTabs.length) {
+        group('Hoje');
+        matchedTabs.forEach(({t, i}) => {
+          items.push({selectable: true, label: (i === activeTab ? '● ' : '　') + t.title, hint: '', run: () => {
+            closeAll();
+            switchTab(i);
+          }});
+        });
+      }
+      group('delete ctrl+d   rename ctrl+r');
+    } else if (top.view === 'name') {
+      ptitle.textContent = 'Mudar nome';
+    }
+  }
+
+  function rowLabel(r) { return r.theme ? ((r.theme === state.theme ? '● ' : '　') + r.theme) : r.label; }
+
+  function render() {
+    buildItems();
+    if (!items[activeIdx] || !items[activeIdx].selectable) {
+      const j = items.findIndex(r => r.selectable);
+      activeIdx = j >= 0 ? j : 0;
+    }
+    const top = stack[stack.length - 1];
+    psearch.style.display = top.view === 'name' ? 'none' : '';
+    if (top.view === 'name') {
+      pbody.innerHTML = '<ul><li class="group">Nome na tela inicial (Enter confirma)</li></ul><input id="nameInput" maxlength="24" autocomplete="off">';
+      const ni = document.getElementById('nameInput');
+      ni.value = state.name === 'Hermes' ? '' : state.name;
+      ni.placeholder = 'Exemplo: Jarvis';
+      setTimeout(() => ni.focus(), 30);
+      ni.addEventListener('keydown', ev => {
+        ev.stopPropagation();
+        if (ev.key === 'Enter') { setName(ni.value); pop(); showToast('nome atualizado'); }
+        else if (ev.key === 'Escape') { pop(); }
+      });
+      return;
+    }
+    let h = '<ul>';
+    items.forEach((r, i) => {
+      if (r.group) { h += '<li class="group">' + escHtml(r.group) + '</li>'; return; }
+      const hint = r.val ? escHtml(String(r.val())) : escHtml(r.hint || '');
+      const labelHtml = escHtml(rowLabel(r)) + (r.desc ? ' <span class="desc">' + escHtml(r.desc) + '</span>' : '');
+      h += '<li data-i="' + i + '" class="' + (i === activeIdx ? 'active' : '') + '"><span>' + labelHtml + '</span><span class="key">' + hint + '</span></li>';
+    });
+    pbody.innerHTML = h + '</ul>';
+  }
+
+  function renderKeep() {
+    const cur = items[activeIdx];
+    const key = cur && (cur.theme || cur.label);
+    render();
+    if (key) {
+      const j = items.findIndex(r => r.theme === key || r.label === key);
+      if (j >= 0) activeIdx = j;
+    }
+    paintActive();
+  }
+
+  function paintActive() {
+    pbody.querySelectorAll('li[data-i]').forEach(li => li.classList.toggle('active', +li.dataset.i === activeIdx));
+    const cur = pbody.querySelector('li[data-i="' + activeIdx + '"]');
+    if (cur) cur.scrollIntoView({block: 'nearest'});
+  }
+  function previewTheme() {
+    const r = items[activeIdx];
+    if (stack[stack.length - 1].view === 'themes' && r && r.theme) applyTheme(r.theme);
+  }
+  function move(d) {
+    const n = items.length;
+    if (!n) return;
+    let i = activeIdx;
+    for (let k = 0; k < n; k++) {
+      i = (i + d + n) % n;
+      if (items[i].selectable) { activeIdx = i; break; }
+    }
+    paintActive();
+    previewTheme();
+  }
+  function activateCurrent() {
+    const r = items[activeIdx];
+    if (r && r.selectable) r.run();
+  }
+  function cycleKey(key, d) {
+    const arr = CYCLES[key];
+    if (!arr) return;
+    state[key] = arr[(arr.indexOf(state[key]) + (d || 1) + arr.length) % arr.length];
+    if (key === 'agent') syncModelLine();
+    if (key === 'colorMode') applyTheme(state.theme);
+    renderKeep();
+  }
+
+  function push(view) {
+    if (view === 'themes') { prevTheme = state.theme; themeConfirmed = false; }
+    stack.push({view});
+    activeIdx = 0;
+    psearch.value = '';
+    render();
+    if (view !== 'name') setTimeout(() => psearch.focus(), 20);
+  }
+  function pop() {
+    stack.pop();
+    activeIdx = 0;
+    render();
+    setTimeout(() => psearch.focus(), 20);
+  }
+  function openPalette() {
+    stack = [{view: 'commands'}];
+    activeIdx = 0;
+    pback.classList.add('open');
+    psearch.value = '';
+    render();
+    setTimeout(() => psearch.focus(), 30);
+  }
+  function revertThemeIfNeeded() {
+    const top = stack[stack.length - 1];
+    if (top.view === 'themes' && !themeConfirmed && prevTheme) applyTheme(prevTheme);
+  }
+  function closeAll() { pback.classList.remove('open'); box.focus(); }
+  function cancelAll() { revertThemeIfNeeded(); closeAll(); }
+  function escLevel() {
+    const top = stack[stack.length - 1];
+    if (top.view === 'themes' && !themeConfirmed && prevTheme) applyTheme(prevTheme);
+    if (stack.length > 1) pop();
+    else closeAll();
+  }
+
+  let chord = false;
+  function openView(view) { if (!pback.classList.contains('open')) openPalette(); push(view); }
+  function handleChord(k) {
+    if (k === 'l') openView('sessions');
+    else if (k === 'm') openView('models');
+    else if (k === 'n') { cancelAll(); newTab(); }
+    else if (k === 'w') { cancelAll(); closeTab(); }
+    else if (k === 'a') { cancelAll(); cycleAgent(); }
+    else if (k === 's') showToast('prévia: status não abre de verdade');
+    else showToast('prévia: atalho sem ação');
+  }
+  document.addEventListener('keydown', e => {
+    const typing = e.target && e.target.tagName === 'INPUT';
+    if (typing && e.key !== 'Escape' && !(e.ctrlKey && e.key.toLowerCase() === 'p')) return;
+    if (chord) { chord = false; e.preventDefault(); handleChord(e.key.toLowerCase()); return; }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'x') { e.preventDefault(); chord = true; return; }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') { e.preventDefault(); openView('sessions'); return; }
+    if (e.shiftKey && e.key === 'Tab') {
+      if (!pback.classList.contains('open')) { e.preventDefault(); cycleAgent(); }
+      return;
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'p') { e.preventDefault(); pback.classList.contains('open') ? cancelAll() : openPalette(); }
+    else if (e.key === 'Escape' && pback.classList.contains('open')) { escLevel(); }
+    else if (e.key === 'Escape') { chord = false; }
+  });
+  pback.addEventListener('click', e => { if (e.target === pback) cancelAll(); });
+  document.querySelector('.tabs').addEventListener('click', ev => {
+    const x = ev.target.closest('[data-close]');
+    if (x) { ev.stopPropagation(); closeTab(+x.dataset.close); return; }
+    const t = ev.target.closest('[data-tab]');
+    if (t) { switchTab(+t.dataset.tab); return; }
+    if (ev.target.closest('#newTab')) newTab();
+  });
+  psearch.addEventListener('input', () => { activeIdx = 0; render(); });
+  psearch.addEventListener('keydown', ev => {
+    if (ev.key === 'ArrowDown') { ev.preventDefault(); move(1); }
+    else if (ev.key === 'ArrowUp') { ev.preventDefault(); move(-1); }
+    else if (ev.key === 'Enter') { activateCurrent(); }
+    else if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') {
+      const r = items[activeIdx];
+      if (stack[stack.length - 1].view === 'settings' && r && r.cycle) r.cycle(ev.key === 'ArrowRight' ? 1 : -1);
+    }
+  });
+  pbody.addEventListener('click', ev => {
+    const li = ev.target.closest('li[data-i]');
+    if (!li) return;
+    activeIdx = +li.dataset.i;
+    activateCurrent();
+  });
+  pbody.addEventListener('mousemove', ev => {
+    const li = ev.target.closest('li[data-i]');
+    if (!li) return;
+    const i = +li.dataset.i;
+    if (i !== activeIdx && items[i].selectable) { activeIdx = i; paintActive(); previewTheme(); }
+  });
+
+  let tabs = [{title: 'Nova sessão', live: '', chatting: false, model: 'Muse Spark 1.3 Contributor', provider: 'OpenCode Go', agent: 'SMART', statLeft: '⊙ 61 ferramentas · 120 skills', statRight: '0.22.2'}];
+  let activeTab = 0;
+  let closedStack = [];
+  function saveTab() {
+    const t = tabs[activeTab];
+    t.live = live.innerHTML;
+    t.chatting = document.body.classList.contains('chatting');
+    t.model = state.model; t.provider = state.provider; t.agent = state.agent;
+    t.statLeft = document.getElementById('statLeft').textContent;
+    t.statRight = document.getElementById('statRight').innerHTML;
+  }
+  function renderTabs() {
+    const el = document.querySelector('.tabs');
+    let h = '';
+    tabs.forEach((t, i) => { h += '<span class="tab' + (i === activeTab ? ' active' : '') + '" data-tab="' + i + '"><span>' + escHtml(t.title) + '</span><span class="tab-x" data-close="' + i + '" title="Fechar aba">×</span></span>'; });
+    if (tabs[activeTab].chatting) h += '<span id="newTab">+ New session</span>';
+    el.innerHTML = h;
+    el.classList.toggle('show', tabs.length > 1 || !!tabs[activeTab].chatting);
+  }
+  function restoreTab() {
+    const t = tabs[activeTab];
+    state.model = t.model; state.provider = t.provider; state.agent = t.agent;
+    syncModelLine();
+    live.innerHTML = t.live;
+    document.body.classList.toggle('chatting', t.chatting);
+    conv.classList.toggle('open', t.chatting || t.live !== '');
+    document.getElementById('statLeft').textContent = t.statLeft;
+    document.getElementById('statRight').innerHTML = t.statRight;
+    box.value = '';
+    renderTabs();
+    mainEl.scrollTop = mainEl.scrollHeight;
+  }
+  function switchTab(i) { if (i === activeTab || !tabs[i]) return; saveTab(); activeTab = i; restoreTab(); }
+  function newTab() {
+    saveTab();
+    tabs.push({title: 'Nova sessão', live: '', chatting: false, model: state.model, provider: state.provider, agent: state.agent, statLeft: '⊙ 61 ferramentas · 120 skills', statRight: '0.22.2'});
+    activeTab = tabs.length - 1;
+    restoreTab();
+    box.focus();
+  }
+  function clearTab() {
+    const t = tabs[activeTab];
+    t.live = ''; t.chatting = false; t.title = 'Nova sessão';
+    t.statLeft = '⊙ 61 ferramentas · 120 skills'; t.statRight = '0.22.2';
+    restoreTab();
+  }
+  function closeTab(i) {
+    if (i === undefined) i = activeTab;
+    if (tabs.length <= 1) { clearTab(); showToast('prévia: última aba limpa em vez de fechar'); return; }
+    if (i === activeTab) saveTab();
+    closedStack.push({tab: tabs[i], index: i});
+    tabs.splice(i, 1);
+    if (activeTab >= tabs.length) activeTab = tabs.length - 1;
+    else if (i < activeTab) activeTab = activeTab - 1;
+    restoreTab();
+  }
+  function reopenTab() {
+    const c = closedStack.pop();
+    if (!c) { showToast('prévia: nenhuma aba fechada'); return; }
+    tabs.splice(Math.min(c.index, tabs.length), 0, c.tab);
+    activeTab = Math.min(c.index, tabs.length - 1);
+    restoreTab();
+  }
+  applyTheme(state.theme);
+  setName(state.name);
+  syncModelLine();
+  renderTabs();
+  const baseFill = '▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀';
+  function startChatting() {
+    document.body.classList.add('chatting');
+    document.getElementById('statLeft').textContent = '9.8K (1%) · $0.00';
+    document.getElementById('statRight').innerHTML = '<b>ctrl+p</b> commands';
+    renderTabs();
+  }
+  const SLASH = [
+    ['new', 'reset', 'Fresh session'], ['clear', '', 'Clear screen + new session'],
+    ['retry', '', 'Resend last message'], ['undo', '', 'Back up N turns and re-prompt'],
+    ['title', '', 'Name the session'], ['prompt', 'compose', 'Compose next prompt in $EDITOR'],
+    ['compress', 'compact', 'Compress context'], ['stop', '', 'Kill background processes'],
+    ['rollback', '', 'Restore filesystem checkpoints'], ['diff', '', 'Git changes in cwd'],
+    ['snapshot', '', 'Config + state snapshots'], ['bg', '', 'Run prompt in background session'],
+    ['btw', '', 'Side question without interrupting'], ['queue', 'q', 'Queue prompt for next turn'],
+    ['steer', '', 'Inject message after next tool call'], ['agents', 'tasks', 'Active agents and tasks'],
+    ['goal', '', 'Standing goal across turns'], ['subgoal', '', 'Manage goal criteria'],
+    ['branch', 'fork', 'Branch the session'], ['resume', '', 'Resume a named session'],
+    ['sessions', '', 'Browse previous sessions'], ['handoff', '', 'Hand session to a platform'],
+    ['status', '', 'Session, model and usage info'], ['redraw', '', 'Force full UI repaint'],
+    ['config', '', 'Show config'], ['model', '', 'Switch model'],
+    ['personality', '', 'Set a personality'], ['reasoning', '', 'Reasoning effort and display'],
+    ['fast', '', 'Priority processing tier'], ['verbose', '', 'Cycle tool progress detail'],
+    ['voice', '', 'Voice mode'], ['yolo', '', 'Toggle approval bypass'],
+    ['busy', '', 'Behavior while working'], ['indicator', '', 'TUI busy indicator'],
+    ['footer', '', 'Reply metadata footer'], ['skin', '', 'Change theme'],
+    ['statusbar', 'sb', 'Toggle status bar'], ['battery', '', 'Battery indicator'],
+    ['timestamps', 'ts', 'Message timestamps'], ['codex-runtime', '', 'Codex runtime toggle'],
+    ['tools', '', 'Manage tools'], ['toolsets', '', 'List toolsets'],
+    ['skills', '', 'Search and manage skills'], ['bundles', '', 'List skill bundles'],
+    ['learn', '', 'Learn a reusable skill'], ['memory', '', 'Review pending memory writes'],
+    ['pet', '', 'Petdex mascot control'], ['hatch', '', 'Generate a new pet'],
+    ['cron', '', 'Manage scheduled tasks'], ['suggestions', 'suggest', 'Review suggested automations'],
+    ['blueprint', 'bp', 'Automation from blueprint'], ['curator', '', 'Skill maintenance'],
+    ['kanban', '', 'Collaboration board'], ['moa', '', 'Mixture-of-Agents prompt'],
+    ['reload', '', 'Reload .env'], ['reload-mcp', '', 'Reload MCP servers'],
+    ['reload-skills', '', 'Re-scan skills'], ['browser', '', 'Live browser connection'],
+    ['plugins', '', 'List plugins'], ['help', '', 'Show commands'],
+    ['usage', '', 'Token usage and limits'], ['insights', '', 'Usage analytics'],
+    ['whoami', '', 'Access level'], ['profile', '', 'Active profile info'],
+    ['platforms', 'gateway', 'Platform status'], ['journey', 'learning', 'Skills and memories timeline'],
+    ['subscription', 'upgrade', 'Plan info'], ['topup', '', 'Balance and billing'],
+    ['copy', '', 'Copy last response'], ['paste', '', 'Attach clipboard image'],
+    ['image', '', 'Attach image file'], ['update', '', 'Update Hermes'],
+    ['version', 'v', 'Show version'], ['debug', '', 'Upload debug report'],
+    ['quit', 'exit', 'Exit CLI']
+  ];
+  let slashOpen = false, slashItems = [], slashIdx = 0;
+  const slashpop = document.getElementById('slashpop');
+  function slashShow(q) {
+    q = q.toLowerCase();
+    slashItems = SLASH.filter(([n, a, d]) => (n + ' ' + a + ' ' + d).toLowerCase().includes(q));
+    if (!slashItems.length) { slashHide(); return; }
+    slashIdx = 0;
+    let h = '';
+    slashItems.forEach(([n, a, d], i) => {
+      h += '<div class="srow' + (i === 0 ? ' active' : '') + '" data-s="' + i + '"><span class="scmd">/' + n + '</span><span class="sdesc">' + d + '</span></div>';
+    });
+    slashpop.innerHTML = h;
+    slashpop.hidden = false;
+    slashOpen = true;
+  }
+  function slashPaint() {
+    slashpop.querySelectorAll('.srow').forEach(r => r.classList.toggle('active', +r.dataset.s === slashIdx));
+    const cur = slashpop.querySelector('.srow[data-s="' + slashIdx + '"]');
+    if (cur && cur.scrollIntoView) cur.scrollIntoView({block: 'nearest'});
+  }
+  function slashMove(d) {
+    if (!slashItems.length) return;
+    slashIdx = (slashIdx + d + slashItems.length) % slashItems.length;
+    slashPaint();
+  }
+  function slashComplete() {
+    const it = slashItems[slashIdx];
+    if (!it) { slashHide(); return; }
+    box.value = '/' + it[0] + ' ';
+    slashHide();
+    box.focus();
+  }
+  function slashHide() { slashOpen = false; slashpop.hidden = true; }
+  slashpop.addEventListener('click', ev => {
+    const r = ev.target.closest('.srow');
+    if (!r) return;
+    slashIdx = +r.dataset.s;
+    slashComplete();
+  });
+  slashpop.addEventListener('mousemove', ev => {
+    const r = ev.target.closest('.srow');
+    if (!r) return;
+    const i = +r.dataset.s;
+    if (i !== slashIdx) { slashIdx = i; slashPaint(); }
+  });
+  box.addEventListener('input', () => {
+    if (box.value.startsWith('/')) slashShow(box.value.slice(1));
+    else slashHide();
+  });
+  box.addEventListener('keydown', e => {
+    if (slashOpen && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) { e.preventDefault(); slashMove(e.key === 'ArrowDown' ? 1 : -1); return; }
+    if (slashOpen && e.key === 'Escape') { slashHide(); return; }
+    if (slashOpen && (e.key === 'Enter' || e.key === 'Tab') && box.value.startsWith('/')) { e.preventDefault(); slashComplete(); return; }
+    if (e.key === 'Enter' && box.value.trim()) {
+      const text = box.value.trim();
+      conv.classList.add('open');
+      startChatting();
+      tabs[activeTab].chatting = true;
+      if (tabs[activeTab].title === 'Nova sessão') { tabs[activeTab].title = text.slice(0, 24); }
+      renderTabs();
+      const planMode = state.agent === 'PLAN' && !text.startsWith('/');
+      const turn = document.createElement('div');
+      turn.innerHTML = '<div class="ubox"><div class="crow"><span class="txt"></span></div></div>' +
+        (planMode
+          ? '<div class="thinking">Drafting plan without executing anything…</div><div class="toolline">→ plan: wrote .hermes/plans/plan.md</div><div class="answer">Prévia: plano escrito em .hermes/plans/, nada foi executado. No Hermes real, aqui roda o /plan de verdade.</div>'
+          : '<div class="thinking">Consultando ferramentas e memória…</div><div class="toolline">→ Explored: 1 read</div><div class="answer">Prévia: aqui entraria a resposta do Hermes, em texto corrido como no opencode, seguida da linha de metadata do turno.</div>') +
+        '<div class="meta"><span class="ag">' + state.agent + '</span> · muse-spark-1.3-contributor · 1.8s · 42.5 tok/s</div>';
+      turn.querySelector('.ubox .txt').textContent = planMode ? '/plan ' + text : text;
+      live.appendChild(turn);
+      showToast('prévia: mensagem só aparece aqui, nada é enviado');
+      box.value = '';
+      mainEl.scrollTop = mainEl.scrollHeight;
+    }
+  });
+  box.focus();
+</script>
+</body>
+</html>

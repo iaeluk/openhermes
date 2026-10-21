@@ -1,0 +1,885 @@
+diff --git c/hermes_cli/config_defaults.py w/hermes_cli/config_defaults.py
+index 76b6fbd23a..c864faeefd 100644
+--- c/hermes_cli/config_defaults.py
++++ w/hermes_cli/config_defaults.py
+@@ -838,6 +838,9 @@ DEFAULT_CONFIG = {
+         # Interface bare `hermes`/`hermes chat` launches: "cli" (prompt_toolkit REPL) | "tui" (Ink).
+         # Flags win: `--cli` forces the REPL, `--tui` / HERMES_TUI=1 forces the TUI.
+         "interface": "cli",
++        # TUI visual layout: "classic" (default Hermes look) | "opencode"
++        # (opencode-style welcome, composer, palettes and tabs). CLI REPL untouched.
++        "layout": "classic",
+         # Native TUI uses the terminal's primary buffer and scrollback instead of the custom
+         # alternate-screen viewport. Flags win: `--native` / `--tui-native` and `--cli`.
+         "tui_native": False,
+diff --git c/ui-tui/src/__tests__/useConfigSync.test.ts w/ui-tui/src/__tests__/useConfigSync.test.ts
+index 79c38f0749..25cbe15162 100644
+--- c/ui-tui/src/__tests__/useConfigSync.test.ts
++++ w/ui-tui/src/__tests__/useConfigSync.test.ts
+@@ -47,6 +47,19 @@ describe('applyDisplay', () => {
+     expect(s.streaming).toBe(false)
+   })
+ 
++  it('syncs display.layout with classic fallback for unknown values', () => {
++    const setBell = vi.fn()
++
++    applyDisplay({ config: { display: { layout: 'opencode' } } }, setBell)
++    expect($uiState.get().layout).toBe('opencode')
++
++    applyDisplay({ config: { display: {} } }, setBell)
++    expect($uiState.get().layout).toBe('classic')
++
++    applyDisplay({ config: { display: { layout: 'futuristic' } } }, setBell)
++    expect($uiState.get().layout).toBe('classic')
++  })
++
+   it('hydrates the destructive slash confirmation policy from approvals', () => {
+     const setBell = vi.fn()
+ 
+diff --git c/ui-tui/src/__tests__/useSubmission.test.ts w/ui-tui/src/__tests__/useSubmission.test.ts
+index 9529b20218..e5c462b182 100644
+--- c/ui-tui/src/__tests__/useSubmission.test.ts
++++ w/ui-tui/src/__tests__/useSubmission.test.ts
+@@ -1,7 +1,26 @@
+ import { describe, expect, it } from 'vitest'
+ 
+ import type { ComposerToken } from '../app/interfaces.js'
+-import { prepareSubmission, shouldInterpolateSubmission } from '../app/useSubmission.js'
++import { patchUiState, resetUiState } from '../app/uiStore.js'
++import { prepareSubmission, shouldInterpolateSubmission, withPlanPrefix } from '../app/useSubmission.js'
++
++describe('withPlanPrefix', () => {
++  it('prefixes typed input with /plan only in PLAN mode on the opencode layout', () => {
++    resetUiState()
++    expect(withPlanPrefix('do the thing')).toBe('do the thing')
++
++    patchUiState({ layout: 'opencode', agentMode: 'PLAN' })
++    expect(withPlanPrefix('do the thing')).toBe('/plan do the thing')
++    expect(withPlanPrefix('/model foo')).toBe('/model foo')
++
++    patchUiState({ agentMode: 'SMART' })
++    expect(withPlanPrefix('do the thing')).toBe('do the thing')
++
++    patchUiState({ layout: 'classic', agentMode: 'PLAN' })
++    expect(withPlanPrefix('do the thing')).toBe('do the thing')
++    resetUiState()
++  })
++})
+ 
+ describe('prepareSubmission', () => {
+   it('keeps the collapsed paste for display and expands the model payload', () => {
+diff --git c/ui-tui/src/app/interfaces.ts w/ui-tui/src/app/interfaces.ts
+index b51aa8525d..1048b3dd74 100644
+--- c/ui-tui/src/app/interfaces.ts
++++ w/ui-tui/src/app/interfaces.ts
+@@ -302,6 +302,7 @@ export interface OverlayState {
+   widget: ActiveWidget | null
+   journey: boolean
+   modelPicker: boolean | { refresh?: boolean }
++  opencodePalette: boolean
+   pager: null | PagerState
+   petPicker: boolean
+   pluginsHub: boolean
+@@ -346,6 +347,13 @@ export interface UiState {
+   info: null | SessionInfo
+   liveSessionCount: number
+   inlineDiffs: boolean
++  // Visual TUI layout: "classic" (default Hermes look) | "opencode"
++  // (opencode-style welcome, composer, palettes, tabs). CLI REPL untouched.
++  layout: 'classic' | 'opencode'
++  // openhermes agent selector (opencode layout): SMART submits normally,
++  // PLAN submits as `/plan <prompt>`, YOLO also flips the per-session yolo
++  // toggle on entry/exit. See shift+tab handling in useInputHandlers.
++  agentMode: 'PLAN' | 'SMART' | 'YOLO'
+   mouseTracking: MouseTrackingMode
+   notice: Notice | null
+   pasteCollapseLines: number
+diff --git c/ui-tui/src/app/overlayStore.ts w/ui-tui/src/app/overlayStore.ts
+index 0c3ea9d7d4..aa0342c371 100644
+--- c/ui-tui/src/app/overlayStore.ts
++++ w/ui-tui/src/app/overlayStore.ts
+@@ -16,6 +16,7 @@ const buildOverlayState = (): OverlayState => ({
+   widget: null,
+   journey: false,
+   modelPicker: false,
++  opencodePalette: false,
+   pager: null,
+   petPicker: false,
+   pluginsHub: false,
+@@ -42,6 +43,7 @@ const BLOCKING_KEYS = [
+   'connectors',
+   'journey',
+   'modelPicker',
++  'opencodePalette',
+   'pager',
+   'petPicker',
+   'pluginsHub',
+@@ -113,6 +115,7 @@ export const hasFloatingPanel = (overlay: OverlayState): boolean =>
+   Boolean(
+     overlay.connectors ||
+     overlay.modelPicker ||
++    overlay.opencodePalette ||
+     overlay.pager ||
+     overlay.petPicker ||
+     overlay.pluginsHub ||
+@@ -169,6 +172,7 @@ export const resetFlowOverlays = () =>
+     widget: $overlayState.get().widget,
+     journey: $overlayState.get().journey,
+     modelPicker: $overlayState.get().modelPicker,
++    opencodePalette: $overlayState.get().opencodePalette,
+     petPicker: $overlayState.get().petPicker,
+     pluginsHub: $overlayState.get().pluginsHub,
+     sessions: $overlayState.get().sessions,
+diff --git c/ui-tui/src/app/uiStore.ts w/ui-tui/src/app/uiStore.ts
+index b29c0ecea1..2ed15bceae 100644
+--- c/ui-tui/src/app/uiStore.ts
++++ w/ui-tui/src/app/uiStore.ts
+@@ -24,6 +24,8 @@ const buildUiState = (): UiState => ({
+   info: null,
+   liveSessionCount: 0,
+   inlineDiffs: true,
++  layout: 'classic',
++  agentMode: 'SMART',
+   mouseTracking: MOUSE_TRACKING,
+   notice: null,
+   pasteCollapseLines: 5,
+diff --git c/ui-tui/src/app/useConfigSync.ts w/ui-tui/src/app/useConfigSync.ts
+index 7b6c422fe6..1ebdc57da5 100644
+--- c/ui-tui/src/app/useConfigSync.ts
++++ w/ui-tui/src/app/useConfigSync.ts
+@@ -309,6 +309,7 @@ export const applyDisplay = (
+     focusView: !!d.focus_view,
+     indicatorStyle: normalizeIndicatorStyle(d.tui_status_indicator),
+     inlineDiffs: d.inline_diffs !== false,
++    layout: d.layout === 'opencode' ? 'opencode' : 'classic',
+     mouseTracking: normalizeMouseTracking(d),
+     pasteCollapseLines: _pasteCollapseLinesFromConfig(cfg),
+     pasteCollapseChars: _pasteCollapseCharsFromConfig(cfg),
+diff --git c/ui-tui/src/app/useInputHandlers.ts w/ui-tui/src/app/useInputHandlers.ts
+index fffce936e7..e27a1bebce 100644
+--- c/ui-tui/src/app/useInputHandlers.ts
++++ w/ui-tui/src/app/useInputHandlers.ts
+@@ -25,7 +25,7 @@ import { $isBlocked, $overlayState, hasSensitivePrompt, patchOverlayState, SENSI
+ import { respondToServerRequest } from './serverRequestStore.js'
+ import { turnController } from './turnController.js'
+ import { patchTurnState } from './turnStore.js'
+-import { getUiState } from './uiStore.js'
++import { getUiState, patchUiState } from './uiStore.js'
+ 
+ const isCtrl = (key: { ctrl: boolean }, ch: string, target: string) => key.ctrl && ch.toLowerCase() === target
+ 
+@@ -282,6 +282,10 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
+       return patchOverlayState({ modelPicker: false })
+     }
+ 
++    if (overlay.opencodePalette) {
++      return patchOverlayState({ opencodePalette: false })
++    }
++
+     if (overlay.petPicker) {
+       return patchOverlayState({ petPicker: false })
+     }
+@@ -740,6 +744,11 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
+       return patchOverlayState({ modelPicker: true })
+     }
+ 
++    // openhermes: Ctrl+P command palette (opencode layout only — classic untouched).
++    if (isCtrl(key, ch, 'p') && getUiState().layout === 'opencode') {
++      return patchOverlayState({ opencodePalette: true })
++    }
++
+     if (key.ctrl && ch.toLowerCase() === 'c') {
+       const ctrlC = resolveCtrlCComposerAction({
+         busy: live.busy,
+@@ -807,6 +816,27 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
+ 
+     // shift-tab flips yolo without spending a turn (claude-code parity)
+     if (key.shift && key.tab && !cState.completions.length) {
++      // TODO(openhermes): i18n for the agent notices below.
++      if (getUiState().layout === 'opencode') {
++        const cur = getUiState().agentMode
++        const next = cur === 'SMART' ? 'PLAN' : cur === 'PLAN' ? 'YOLO' : 'SMART'
++        patchUiState({ agentMode: next })
++
++        if (next !== cur && live.sid && (next === 'YOLO' || cur === 'YOLO')) {
++          // Entering/leaving YOLO flips the proven per-session yolo toggle.
++          // Manual /yolo use can drift the label; the next cycle resyncs it.
++          void gateway.rpc<ConfigSetResponse>('config.set', { key: 'yolo', session_id: live.sid })
++        }
++
++        return void actions.sys(
++          next === 'YOLO'
++            ? 'agent: YOLO (approves everything, no prompts)'
++            : next === 'PLAN'
++              ? 'agent: PLAN (sends as /plan, never executes)'
++              : 'agent: SMART (sensible approvals)'
++        )
++      }
++
+       if (!live.sid) {
+         return void actions.sys(t('session.input.yoloNeedsSession'))
+       }
+diff --git c/ui-tui/src/app/useSubmission.ts w/ui-tui/src/app/useSubmission.ts
+index 073a6db67b..46b9a0eda1 100644
+--- c/ui-tui/src/app/useSubmission.ts
++++ w/ui-tui/src/app/useSubmission.ts
+@@ -63,6 +63,19 @@ export const prepareSlashSubmission = (display: string, tokens: ComposerToken[])
+ 
+ export const shouldInterpolateSubmission = (display: string) => hasInterpolation(display)
+ 
++// openhermes: PLAN agent submits typed input through the real /plan slash
++// command (writes .hermes/plans/ without executing). Explicit slashes pass
++// through untouched.
++export const withPlanPrefix = (text: string): string => {
++  const ui = getUiState()
++
++  if (ui.agentMode === 'PLAN' && ui.layout === 'opencode' && !text.trimStart().startsWith('/')) {
++    return `/plan ${text}`
++  }
++
++  return text
++}
++
+ export function useSubmission(opts: UseSubmissionOptions) {
+   const { appendMessage, composerActions, composerRefs, composerState, gw, setLastUserMsg, slashRef, submitRef, sys } =
+     opts
+@@ -412,7 +425,7 @@ export function useSubmission(opts: UseSubmissionOptions) {
+         return composerActions.setInput('')
+       }
+ 
+-      dispatchSubmission([...composerState.inputBuf, value].join('\n'))
++      dispatchSubmission(withPlanPrefix([...composerState.inputBuf, value].join('\n')))
+     },
+     [appendMessage, composerActions, composerRefs, composerState, dispatchSubmission, gw, sys]
+   )
+diff --git c/ui-tui/src/components/appLayout.tsx w/ui-tui/src/components/appLayout.tsx
+index 2808ae5ccd..89214008c5 100644
+--- c/ui-tui/src/components/appLayout.tsx
++++ w/ui-tui/src/components/appLayout.tsx
+@@ -36,6 +36,7 @@ import { GoalBar } from './goalBar.js'
+ import { HelpHint } from './helpHint.js'
+ import { Journey } from './journey.js'
+ import { MessageLine } from './messageLine.js'
++import { OpencodeBand, OpencodeIntro, OpencodeModelLine, OpencodeTabs } from './opencode.js'
+ import { PetKitty, PetSprite } from './petSprite.js'
+ import { QueuedMessages } from './queuedMessages.js'
+ import { LiveTodoPanel, StreamingAssistant } from './streamingAssistant.js'
+@@ -208,7 +209,9 @@ const TranscriptPane = memo(function TranscriptPane({
+           )}
+ 
+           {row.msg.kind === 'intro' ? (
+-            nativeMode ? null : (
++            nativeMode ? null : ui.layout === 'opencode' ? (
++              <OpencodeIntro t={ui.theme} />
++            ) : (
+               <Box flexDirection="column" paddingTop={1}>
+                 <Banner maxWidth={Math.max(1, composer.cols - 2)} t={ui.theme} />
+ 
+@@ -224,6 +227,24 @@ const TranscriptPane = memo(function TranscriptPane({
+             )
+           ) : row.msg.kind === 'panel' && row.msg.panelData ? (
+             <Panel sections={row.msg.panelData.sections} t={ui.theme} title={row.msg.panelData.title} />
++          ) : row.msg.role === 'user' && ui.layout === 'opencode' ? (
++            <OpencodeBand t={ui.theme}>
++              <MessageLine
++                cols={bodyCols}
++                compact={ui.compact}
++                detailsMode={ui.detailsMode}
++                detailsModeCommandOverride={ui.detailsModeCommandOverride}
++                msg={row.msg}
++                prev={prevRenderedMsg(i => transcript.virtualRows[i]?.msg, row.index, {
++                  commandOverride: ui.detailsModeCommandOverride,
++                  detailsMode: ui.detailsMode,
++                  sections: ui.sections
++                })}
++                sections={ui.sections}
++                t={ui.theme}
++                timestamps={ui.timestamps}
++              />
++            </OpencodeBand>
+           ) : (
+             <MessageLine
+               cols={bodyCols}
+@@ -421,6 +442,15 @@ const ComposerPane = memo(function ComposerPane({
+         flexDirection="column"
+         marginTop={nativeMode || ui.statusBar === 'top' ? 0 : 1}
+         position={nativeMode ? undefined : 'relative'}
++        {...(ui.layout === 'opencode'
++          ? {
++              borderStyle: 'single',
++              borderTop: false,
++              borderBottom: false,
++              borderRight: false,
++              borderColor: ui.theme.color.accent
++            }
++          : {})}
+       >
+         {!nativeMode && <FloatingOverlays {...floatingOverlayProps} />}
+ 
+@@ -486,6 +516,9 @@ const ComposerPane = memo(function ComposerPane({
+                 <GoodVibesHeart t={ui.theme} tick={status.goodVibesTick} />
+               </Box>
+             </Box>
++            {ui.layout === 'opencode' && (
++              <OpencodeModelLine agent={ui.agentMode} model={ui.info?.model ?? ''} t={ui.theme} />
++            )}
+           </>
+         )}
+       </Box>
+@@ -594,6 +627,15 @@ export const AppLayout = memo(function AppLayout({
+   return (
+     <Shell {...shellProps}>
+       <Box flexDirection="column" flexGrow={1} position={NATIVE_MODE ? undefined : 'relative'}>
++        {ui.layout === 'opencode' && (
++          <OpencodeTabs
++            fresh={!transcript.historyItems.some(m => m.role === 'user')}
++            onClose={actions.closeLiveSession}
++            onNew={actions.newLiveSession}
++            onSelect={actions.activateLiveSession}
++            t={ui.theme}
++          />
++        )}
+         <Box flexDirection="row" flexGrow={1}>
+           {!overlay.agents && !overlay.journey && <AmbientRail side="left" />}
+           {overlay.agents ? (
+diff --git c/ui-tui/src/components/appOverlays.tsx w/ui-tui/src/components/appOverlays.tsx
+index 9de4c52c03..10926a5a27 100644
+--- c/ui-tui/src/components/appOverlays.tsx
++++ w/ui-tui/src/components/appOverlays.tsx
+@@ -5,7 +5,7 @@ import type { ReactNode } from 'react'
+ import { useGateway } from '../app/gatewayContext.js'
+ import type { AppOverlaysProps } from '../app/interfaces.js'
+ import { $overlayState, hasFloatingPanel, patchOverlayState } from '../app/overlayStore.js'
+-import { $uiSessionId, $uiTheme } from '../app/uiStore.js'
++import { $uiSessionId, $uiTheme, getUiState } from '../app/uiStore.js'
+ 
+ import { ActiveSessionSwitcher } from './activeSessionSwitcher.js'
+ import { FloatBox } from './appChrome.js'
+@@ -14,6 +14,7 @@ import { ConnectionSetupOverlay } from './connectionSetupOverlay.js'
+ import { ConnectorsOverlay } from './connectorsOverlay.js'
+ import { SecretPrompt, SudoPrompt, VaultCodePrompt, VaultSaveLoginPrompt, VaultUnlockPrompt } from './maskedPrompt.js'
+ import { ModelPicker } from './modelPicker.js'
++import { OpencodePalette } from './opencodePalette.js'
+ import { OverlayHint } from './overlayControls.js'
+ import { listRowStyle } from './overlayPrimitives.js'
+ import { PetPicker } from './petPicker.js'
+@@ -265,7 +266,10 @@ export function FloatingOverlays({
+   // Fixed viewport centered on compIdx — previously the slice end was
+   // compIdx + 8 so the dropdown grew from 8 rows to 16 as the user scrolled
+   // down, bouncing the height on every keystroke.
+-  const viewportSize = Math.min(COMPLETION_WINDOW, completions.length)
++  const viewportSize = Math.min(
++    getUiState().layout === 'opencode' ? 11 : COMPLETION_WINDOW,
++    completions.length
++  )
+ 
+   const start = Math.max(0, Math.min(compIdx - Math.floor(COMPLETION_WINDOW / 2), completions.length - viewportSize))
+ 
+@@ -298,6 +302,23 @@ export function FloatingOverlays({
+     })
+   }
+ 
++  if (overlay.opencodePalette) {
++    widgets.push({
++      id: 'opencode-palette',
++      render: width => (
++        <FloatBox color={theme.color.border}>
++          <OpencodePalette
++            onCancel={() => patchOverlayState({ opencodePalette: false })}
++            onNewSession={onNewLiveSession}
++            onOpenModelPicker={() => patchOverlayState({ opencodePalette: false, modelPicker: true })}
++            onOpenSessions={() => patchOverlayState({ opencodePalette: false, sessions: true })}
++            t={theme}
++          />
++        </FloatBox>
++      )
++    })
++  }
++
+   if (overlay.modelPicker) {
+     const initialRefresh = typeof overlay.modelPicker === 'object' && overlay.modelPicker.refresh === true
+ 
+diff --git c/ui-tui/src/components/opencode.tsx w/ui-tui/src/components/opencode.tsx
+new file mode 100644
+index 0000000000..eb47fe23f2
+--- /dev/null
++++ w/ui-tui/src/components/opencode.tsx
+@@ -0,0 +1,153 @@
++import { Box, Text } from '@hermes/ink'
++import { useStore } from '@nanostores/react'
++import { memo, type ReactNode, useCallback, useEffect, useState } from 'react'
++
++import { useGateway } from '../app/gatewayContext.js'
++import { $uiSessionId } from '../app/uiStore.js'
++import { logo } from '../banner.js'
++import type { SessionActiveItem, SessionActiveListResponse } from '../gatewayTypes.js'
++import type { Theme } from '../theme.js'
++
++// openhermes Fase 2: opencode-style surfaces for the Ink TUI, rendered only
++// when `display.layout` is "opencode". Classic look is untouched.
++
++export const OpencodeIntro = memo(function OpencodeIntro({ t }: { t: Theme }) {
++  const lines = logo(t.color, t.bannerLogo || undefined)
++
++  return (
++    <Box alignItems="center" flexDirection="column" paddingY={1}>
++      {lines.map(([color, text], i) => (
++        <Text color={color || t.color.text} key={i}>
++          {text}
++        </Text>
++      ))}
++    </Box>
++  )
++})
++
++export const OpencodeBand = memo(function OpencodeBand({
++  children,
++  t
++}: {
++  children: ReactNode
++  t: Theme
++}) {
++  return (
++    <Box
++      borderBottom={false}
++      borderColor={t.color.accent}
++      borderRight={false}
++      borderStyle="single"
++      borderTop={false}
++      flexDirection="column"
++      paddingX={1}
++    >
++      {children}
++    </Box>
++  )
++})
++
++export const OpencodeModelLine = memo(function OpencodeModelLine({
++  agent,
++  model,
++  t
++}: {
++  agent: string
++  model: string
++  t: Theme
++}) {
++  if (!model) {
++    return null
++  }
++
++  return (
++    <Box paddingX={1}>
++      <Text color={t.color.muted}>
++        <Text bold color={t.color.accent}>
++          {agent}
++        </Text>
++        {' · '}
++        {model}
++      </Text>
++    </Box>
++  )
++})
++
++const TAB_TITLE_LEN = 24
++const TABS_POLL_MS = 6000
++
++export interface OpencodeTabsProps {
++  fresh: boolean
++  onClose: (id: string) => void
++  onNew: () => void
++  onSelect: (id: string) => void
++  t: Theme
++}
++
++export const OpencodeTabs = memo(function OpencodeTabs({ fresh, onClose, onNew, onSelect, t }: OpencodeTabsProps) {
++  const { gw } = useGateway()
++  const sid = useStore($uiSessionId)
++  const [tabs, setTabs] = useState<SessionActiveItem[]>([])
++
++  const refresh = useCallback(() => {
++    void (async () => {
++      try {
++        const r = await gw.request<SessionActiveListResponse>('session.active_list', {})
++        const rows = (r as SessionActiveListResponse | null)?.sessions
++
++        if (rows) {
++          setTabs(rows)
++        }
++      } catch {
++        // Keep last-good list; a transient failure must not blank the bar.
++      }
++    })()
++  }, [gw])
++
++  useEffect(() => {
++    refresh()
++  }, [refresh, sid])
++
++  useEffect(() => {
++    const id = setInterval(refresh, TABS_POLL_MS)
++
++    return () => clearInterval(id)
++  }, [refresh])
++
++  if (tabs.length <= 1 && fresh) {
++    return null
++  }
++
++  return (
++    <Box flexDirection="row" paddingX={1}>
++      {tabs.map(tab => {
++        const active = tab.current || (sid != null && tab.id === sid)
++        const title = (tab.title || tab.preview || tab.id).slice(0, TAB_TITLE_LEN)
++
++        return (
++          <Box key={tab.id} onClick={() => onSelect(tab.id)}>
++            <Text
++              backgroundColor={active ? t.color.statusBg : undefined}
++              bold={active}
++              color={active ? t.color.text : t.color.muted}
++            >
++              {` ${title} `}
++            </Text>
++            <Box onClick={(e: { stopImmediatePropagation?: () => void }) => {
++              e.stopImmediatePropagation?.()
++              onClose(tab.id)
++            }}
++            >
++              <Text color={t.color.muted}>{' ×'}</Text>
++            </Box>
++          </Box>
++        )
++      })}
++      {!fresh && (
++        <Box onClick={() => onNew()}>
++          <Text color={t.color.muted}>{' + New session'}</Text>
++        </Box>
++      )}
++    </Box>
++  )
++})
+diff --git c/ui-tui/src/components/opencodePalette.tsx w/ui-tui/src/components/opencodePalette.tsx
+new file mode 100644
+index 0000000000..2bbf09afde
+--- /dev/null
++++ w/ui-tui/src/components/opencodePalette.tsx
+@@ -0,0 +1,305 @@
++import { Box, Text, useInput } from '@hermes/ink'
++import { memo, useEffect, useState } from 'react'
++
++import { useGateway } from '../app/gatewayContext.js'
++import { patchOverlayState } from '../app/overlayStore.js'
++import { detectLightMode } from '../theme.js'
++import type { Theme } from '../theme.js'
++
++// openhermes Fase 3: Ctrl+P command palette. Views: commands, settings,
++// themes. Models/sessions reuse the existing pickers. Name (skin branding)
++// needs a backend RPC first — see TODO in Fase 5 notes, not shipped here.
++
++type View = 'commands' | 'settings' | 'themes'
++
++const THEME_NAMES = [
++  'aura', 'ayu', 'carbonfox', 'catppuccin', 'catppuccin-frappe',
++  'catppuccin-macchiato', 'cobalt2', 'cursor', 'dracula', 'everforest',
++  'flexoki', 'github', 'gruvbox', 'kanagawa', 'lucent-orng', 'material',
++  'matrix', 'mercury', 'monokai', 'nightowl', 'nord', 'one-dark',
++  'opencode', 'orng', 'osaka-jade', 'palenight', 'rosepine', 'solarized',
++  'synthwave84', 'tokyonight', 'vercel', 'vesper', 'zenburn'
++]
++
++const COLOR_MODES = ['auto', 'light', 'dark']
++
++interface PaletteRow {
++  hint?: string
++  label: string
++  run: () => void
++  value?: string
++}
++
++export interface OpencodePaletteProps {
++  onCancel: () => void
++  onNewSession: () => void
++  onOpenModelPicker: () => void
++  onOpenSessions: () => void
++  t: Theme
++}
++
++export const OpencodePalette = memo(function OpencodePalette({
++  onCancel,
++  onNewSession,
++  onOpenModelPicker,
++  onOpenSessions,
++  t
++}: OpencodePaletteProps) {
++  const { rpc } = useGateway()
++  const [view, setView] = useState<View>('commands')
++  const [filter, setFilter] = useState('')
++  const [activeIdx, setActiveIdx] = useState(0)
++  const [values, setValues] = useState<Record<string, string>>({})
++  const [currentSkin, setCurrentSkin] = useState('')
++  const [err, setErr] = useState('')
++
++  useEffect(() => {
++    if (view !== 'settings') {
++      return
++    }
++    void (async () => {
++      const out: Record<string, string> = {}
++
++      for (const k of ['display.layout', 'show_reasoning', 'tui_theme']) {
++        try {
++          const r = (await rpc('config.get', { key: k })) as { value?: unknown } | null
++          out[k] = String(r?.value ?? '')
++        } catch {
++          out[k] = ''
++        }
++      }
++
++      setValues(out)
++    })()
++  }, [rpc, view])
++
++  useEffect(() => {
++    if (view !== 'themes') {
++      return
++    }
++    void (async () => {
++      try {
++        const r = (await rpc('config.get', { key: 'skin' })) as { value?: unknown } | null
++        setCurrentSkin(String(r?.value ?? ''))
++      } catch {
++        setCurrentSkin('')
++      }
++    })()
++  }, [rpc, view])
++
++  const setConfig = (key: string, value: string, local?: Record<string, string>) => {
++    void (async () => {
++      try {
++        await rpc('config.set', { key, value })
++        setErr('')
++
++        if (local) {
++          setValues(prev => ({ ...prev, ...local }))
++        }
++      } catch (e) {
++        setErr(e instanceof Error ? e.message : String(e))
++      }
++    })()
++  }
++
++  const applyTheme = (name: string) => {
++    const suffix = detectLightMode() ? '-light' : ''
++    const skin = `oh-${name}${suffix}`
++    setCurrentSkin(skin)
++    setConfig('skin', skin)
++  }
++
++  const cycleColorMode = () => {
++    const cur = values['tui_theme'] || 'auto'
++    const next = COLOR_MODES[(COLOR_MODES.indexOf(cur) + 1) % COLOR_MODES.length] ?? 'auto'
++    setConfig('tui_theme', next, { tui_theme: next })
++  }
++
++  const go = (v: View) => {
++    setView(v)
++    setFilter('')
++    setActiveIdx(0)
++  }
++
++  const rows: { group: string; items: PaletteRow[] }[] = []
++
++  if (view === 'commands') {
++    rows.push(
++      {
++        group: 'Suggested',
++        items: [
++          { hint: 'ctrl+x l', label: 'Switch session', run: onOpenSessions },
++          { hint: 'ctrl+x m', label: 'Switch model', run: onOpenModelPicker },
++          { label: 'Open settings', run: () => go('settings') }
++        ]
++      },
++      {
++        group: 'Session',
++        items: [{ hint: 'ctrl+x n', label: 'New session', run: onNewSession }]
++      },
++      {
++        group: 'Appearance',
++        items: [
++          { label: 'Switch theme', run: () => go('themes') },
++          { label: 'Color mode', run: cycleColorMode }
++        ]
++      }
++    )
++  } else if (view === 'settings') {
++    const layout = values['display.layout'] || 'classic'
++    rows.push(
++      {
++        group: 'Appearance',
++        items: [
++          { label: 'Theme', run: () => go('themes'), value: currentSkin || values['skin'] },
++          {
++            label: 'Color mode',
++            run: cycleColorMode,
++            value: values['tui_theme'] || 'auto'
++          },
++          {
++            label: 'Layout',
++            run: () =>
++              setConfig('display.layout', layout === 'opencode' ? 'classic' : 'opencode', {
++                'display.layout': layout === 'opencode' ? 'classic' : 'opencode'
++              }),
++            value: layout
++          }
++        ]
++      },
++      {
++        group: 'Session',
++        items: [
++          { label: 'Model', run: onOpenModelPicker },
++          {
++            label: 'Reasoning',
++            run: () => {
++              const next = values['show_reasoning'] === 'false' ? 'true' : 'false'
++              setConfig('show_reasoning', next, { show_reasoning: next })
++            },
++            value: values['show_reasoning'] === 'false' ? 'off' : 'on'
++          }
++        ]
++      }
++    )
++  } else {
++    const q = filter.toLowerCase()
++    const light = detectLightMode() ? '-light' : ''
++    rows.push({
++      group: 'Themes',
++      items: THEME_NAMES.filter(n => n.includes(q)).map(n => {
++        const skin = `oh-${n}${light}`
++
++        return {
++          label: `${currentSkin === skin ? '● ' : '  '}${n}`,
++          run: () => {
++            applyTheme(n)
++            onCancel()
++          }
++        }
++      })
++    })
++  }
++
++  const q = filter.toLowerCase()
++
++  const visible =
++    view === 'themes'
++      ? rows
++      : rows
++          .map(g => ({
++            ...g,
++            items: g.items.filter(r => r.label.toLowerCase().includes(q))
++          }))
++          .filter(g => g.items.length > 0)
++
++  const flat = visible.flatMap(g => g.items)
++  const clamped = flat.length ? Math.min(activeIdx, flat.length - 1) : 0
++
++  useInput((ch, key) => {
++    if (key.upArrow) {
++      setActiveIdx(i => (i - 1 + flat.length) % Math.max(1, flat.length))
++
++      return
++    }
++
++    if (key.downArrow) {
++      setActiveIdx(i => (i + 1) % Math.max(1, flat.length))
++
++      return
++    }
++
++    if (key.return) {
++      flat[clamped]?.run()
++
++      return
++    }
++
++    if (key.escape) {
++      if (view !== 'commands') {
++        go('commands')
++      } else {
++        onCancel()
++      }
++
++      return
++    }
++
++    if (key.backspace || key.delete) {
++      setFilter(v => v.slice(0, -1))
++      setActiveIdx(0)
++
++      return
++    }
++
++    if (ch && ch.length === 1 && !key.ctrl && !key.meta) {
++      setFilter(v => v + ch)
++      setActiveIdx(0)
++    }
++  })
++
++  let n = 0
++  const title = view === 'commands' ? 'Commands' : view === 'settings' ? 'Settings' : 'Themes'
++
++  return (
++    <Box flexDirection="column" width={60}>
++      <Box justifyContent="space-between">
++        <Text bold color={t.color.text}>
++          {title}
++        </Text>
++        <Text color={t.color.muted}>esc</Text>
++      </Box>
++      <Text color={t.color.muted}>{filter || 'Search'}</Text>
++      {visible.map(g => (
++        <Box flexDirection="column" key={g.group}>
++          <Text bold color={t.color.accent}>
++            {g.group}
++          </Text>
++          {g.items.map(r => {
++            const idx = n
++            n += 1
++            const selected = idx === clamped
++
++            return (
++              <Box justifyContent="space-between" key={r.label}>
++                <Text
++                  backgroundColor={selected ? t.color.selectionBg : undefined}
++                  bold={selected}
++                  color={selected ? t.color.text : t.color.text}
++                >
++                  {r.label}
++                </Text>
++                <Text color={t.color.muted}>{r.value ?? r.hint ?? ''}</Text>
++              </Box>
++            )
++          })}
++        </Box>
++      ))}
++      {err ? <Text color={t.color.error}>{err}</Text> : null}
++    </Box>
++  )
++})
++
++export function openOpencodePalette() {
++  patchOverlayState({ opencodePalette: true })
++}
+diff --git c/ui-tui/src/gatewayTypes.ts w/ui-tui/src/gatewayTypes.ts
+index e82e83a4f2..4b101f537f 100644
+--- c/ui-tui/src/gatewayTypes.ts
++++ w/ui-tui/src/gatewayTypes.ts
+@@ -81,6 +81,9 @@ export interface ConfigDisplayConfig {
+   /** Focus view (/focus) — display-only reduced-output mode. */
+   focus_view?: boolean
+   inline_diffs?: boolean
++  /** TUI visual layout: "classic" (default) | "opencode". Unknown values
++   *  fall back to classic at runtime. */
++  layout?: string
+   /** UI language id (`en`, `pl`, `pt-br`); the TUI fetches its pack via `i18n.catalog`. */
+   language?: string
+   mouse_tracking?: boolean | null | number | string
