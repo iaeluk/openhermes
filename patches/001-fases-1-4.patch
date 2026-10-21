@@ -200,14 +200,70 @@ index 0c3ea9d7d4..aa0342c371 100644
      pluginsHub: $overlayState.get().pluginsHub,
      sessions: $overlayState.get().sessions,
 diff --git a/ui-tui/src/app/uiStore.ts b/ui-tui/src/app/uiStore.ts
-index b29c0ecea1..2ed15bceae 100644
+index b29c0ecea1..3aa9566251 100644
 --- a/ui-tui/src/app/uiStore.ts
 +++ b/ui-tui/src/app/uiStore.ts
-@@ -24,6 +24,8 @@ const buildUiState = (): UiState => ({
+@@ -1,3 +1,7 @@
++import { readFileSync } from 'node:fs'
++import { homedir } from 'node:os'
++import { join } from 'node:path'
++
+ import { atom, computed } from 'nanostores'
+ 
+ import { MOUSE_TRACKING } from '../config/env.js'
+@@ -8,6 +12,47 @@ import { DEFAULT_THEME } from '../theme.js'
+ 
+ import { DEFAULT_INDICATOR_STYLE, type UiState } from './interfaces.js'
+ 
++// openhermes: read display.layout straight from config.yaml at boot so the
++// first frame already uses the right chrome. Without this the TUI boots
++// classic and visibly flips once the gateway config arrives.
++const readBootLayout = (): 'classic' | 'opencode' => {
++  // Deterministic under test: suites must not depend on the real home file.
++  if (process.env.VITEST) {
++    return 'classic'
++  }
++
++  try {
++    const home = process.env.HERMES_HOME ?? join(homedir(), '.hermes')
++    const text = readFileSync(join(home, 'config.yaml'), 'utf8')
++    const lines = text.split('\n')
++    let inDisplay = false
++
++    for (const line of lines) {
++      if (/^display:\s*(#.*)?$/.test(line)) {
++        inDisplay = true
++
++        continue
++      }
++
++      if (inDisplay) {
++        if (/^\S/.test(line)) {
++          break
++        }
++
++        const m = /^\s+layout:\s*["']?(classic|opencode)["']?\s*(#.*)?$/.exec(line)
++
++        if (m?.[1] === 'opencode') {
++          return 'opencode'
++        }
++      }
++    }
++  } catch {
++    // Unreadable config → classic default, gateway sync repairs it.
++  }
++
++  return 'classic'
++}
++
+ const buildUiState = (): UiState => ({
+   battery: false,
+   batteryStatus: null,
+@@ -24,6 +69,8 @@ const buildUiState = (): UiState => ({
    info: null,
    liveSessionCount: 0,
    inlineDiffs: true,
-+  layout: 'classic',
++  layout: readBootLayout(),
 +  agentMode: 'SMART',
    mouseTracking: MOUSE_TRACKING,
    notice: null,
@@ -322,18 +378,26 @@ index 073a6db67b..46b9a0eda1 100644
      [appendMessage, composerActions, composerRefs, composerState, dispatchSubmission, gw, sys]
    )
 diff --git a/ui-tui/src/components/appLayout.tsx b/ui-tui/src/components/appLayout.tsx
-index 2808ae5ccd..89214008c5 100644
+index 2808ae5ccd..e7810032ee 100644
 --- a/ui-tui/src/components/appLayout.tsx
 +++ b/ui-tui/src/components/appLayout.tsx
 @@ -36,6 +36,7 @@ import { GoalBar } from './goalBar.js'
  import { HelpHint } from './helpHint.js'
  import { Journey } from './journey.js'
  import { MessageLine } from './messageLine.js'
-+import { OpencodeBand, OpencodeIntro, OpencodeModelLine, OpencodeTabs } from './opencode.js'
++import { OpencodeBand, OpencodeHints, OpencodeIntro, OpencodeMeta, OpencodeModelLine, OpencodeStatusBar, OpencodeTabs } from './opencode.js'
  import { PetKitty, PetSprite } from './petSprite.js'
  import { QueuedMessages } from './queuedMessages.js'
  import { LiveTodoPanel, StreamingAssistant } from './streamingAssistant.js'
-@@ -208,7 +209,9 @@ const TranscriptPane = memo(function TranscriptPane({
+@@ -201,14 +202,16 @@ const TranscriptPane = memo(function TranscriptPane({
+ 
+       {transcript.virtualRows.slice(transcript.virtualHistory.start, transcript.virtualHistory.end).map(row => (
+         <Box flexDirection="column" key={row.key} ref={transcript.virtualHistory.measureRef(row.key)}>
+-          {row.msg.role === 'user' && firstUserIdx >= 0 && row.index > firstUserIdx && (
++          {row.msg.role === 'user' && firstUserIdx >= 0 && row.index > firstUserIdx && ui.layout !== 'opencode' && (
+             <Box marginTop={1}>
+               <Text color={ui.theme.color.border}>───</Text>
+             </Box>
            )}
  
            {row.msg.kind === 'intro' ? (
@@ -344,13 +408,14 @@ index 2808ae5ccd..89214008c5 100644
                <Box flexDirection="column" paddingTop={1}>
                  <Banner maxWidth={Math.max(1, composer.cols - 2)} t={ui.theme} />
  
-@@ -224,6 +227,24 @@ const TranscriptPane = memo(function TranscriptPane({
+@@ -224,6 +227,25 @@ const TranscriptPane = memo(function TranscriptPane({
              )
            ) : row.msg.kind === 'panel' && row.msg.panelData ? (
              <Panel sections={row.msg.panelData.sections} t={ui.theme} title={row.msg.panelData.title} />
 +          ) : row.msg.role === 'user' && ui.layout === 'opencode' ? (
 +            <OpencodeBand t={ui.theme}>
 +              <MessageLine
++                bare
 +                cols={bodyCols}
 +                compact={ui.compact}
 +                detailsMode={ui.detailsMode}
@@ -369,48 +434,257 @@ index 2808ae5ccd..89214008c5 100644
            ) : (
              <MessageLine
                cols={bodyCols}
-@@ -421,6 +442,15 @@ const ComposerPane = memo(function ComposerPane({
-         flexDirection="column"
+@@ -242,6 +264,15 @@ const TranscriptPane = memo(function TranscriptPane({
+             />
+           )}
+ 
++          {ui.layout === 'opencode' && row.msg.role === 'assistant' && (row.msg.text ?? '').trim() && (
++            <OpencodeMeta
++              agent={ui.agentMode}
++              model={ui.info?.model ?? ''}
++              t={ui.theme}
++              usage={ui.usage}
++            />
++          )}
++
+           {row.index === lastUserIdx && <LiveTodoPanel />}
+         </Box>
+       ))}
+@@ -304,10 +335,13 @@ const ComposerPane = memo(function ComposerPane({
+   actions,
+   composer,
+   cursorSnapshotRef,
++  fresh = false,
+   nativeMode,
+   status
+ }: Pick<AppLayoutProps, 'actions' | 'composer' | 'status'> & {
+   cursorSnapshotRef: MutableRefObject<InputCursorSnapshot | null>
++  /** openhermes: centered welcome composer (placeholder copy follows the preview). */
++  fresh?: boolean
+   nativeMode: boolean
+ }) {
+   const ui = useStore($uiState)
+@@ -315,6 +349,7 @@ const ComposerPane = memo(function ComposerPane({
+   const T = useT()
+   const isBlocked = useStore($isBlocked)
+   const sh = (composer.inputBuf[0] ?? composer.input).startsWith('!')
++  const oc = ui.layout === 'opencode'
+ 
+   const promptText = composerPromptText(
+     ui.theme.brand.prompt,
+@@ -326,7 +361,9 @@ const ComposerPane = memo(function ComposerPane({
+ 
+   const promptWidth = composerPromptWidth(promptText)
+   const promptBlank = ' '.repeat(promptWidth)
+-  const inputColumns = stableComposerColumns(composer.cols, promptWidth, TERMUX_TUI_MODE)
++  // openhermes: no prompt prefix in opencode mode, the input takes the full width.
++  const pw = oc ? 0 : promptWidth
++  const inputColumns = stableComposerColumns(composer.cols, pw, TERMUX_TUI_MODE)
+   const inputHeight = inputVisualHeight(composer.input, inputColumns)
+   const inputMouseRef = useRef<null | TextInputMouseApi>(null)
+ 
+@@ -347,7 +384,7 @@ const ComposerPane = memo(function ComposerPane({
+     }
+ 
+     e.stopImmediatePropagation?.()
+-    inputMouseRef.current?.dragAt(e.localRow ?? 0, (e.localCol ?? 0) - promptWidth)
++    inputMouseRef.current?.dragAt(e.localRow ?? 0, (e.localCol ?? 0) - pw)
+   }
+ 
+   // Spacer rows live on a different vertical origin; only the column is
+@@ -359,7 +396,7 @@ const ComposerPane = memo(function ComposerPane({
+     }
+ 
+     e.stopImmediatePropagation?.()
+-    inputMouseRef.current?.dragAt(0, (e.localCol ?? 0) - promptWidth)
++    inputMouseRef.current?.dragAt(0, (e.localCol ?? 0) - pw)
+   }
+ 
+   const endInputDrag = () => inputMouseRef.current?.end()
+@@ -422,21 +459,33 @@ const ComposerPane = memo(function ComposerPane({
          marginTop={nativeMode || ui.statusBar === 'top' ? 0 : 1}
          position={nativeMode ? undefined : 'relative'}
-+        {...(ui.layout === 'opencode'
-+          ? {
-+              borderStyle: 'single',
-+              borderTop: false,
-+              borderBottom: false,
-+              borderRight: false,
-+              borderColor: ui.theme.color.accent
-+            }
-+          : {})}
        >
-         {!nativeMode && <FloatingOverlays {...floatingOverlayProps} />}
+-        {!nativeMode && <FloatingOverlays {...floatingOverlayProps} />}
+-
+         {!nativeMode && composer.input === '?' && !composer.inputBuf.length && <HelpHint t={ui.theme} />}
  
-@@ -486,6 +516,9 @@ const ComposerPane = memo(function ComposerPane({
+         {!isBlocked && (
+-          <>
++          <Box
++            {...(oc
++              ? {
++                  borderStyle: 'single',
++                  borderTop: false,
++                  borderBottom: false,
++                  borderRight: false,
++                  borderColor: ui.theme.color.accent
++                }
++              : {})}
++            flexDirection="column"
++            paddingX={oc ? 1 : 0}
++          >
+             {composer.inputBuf.map((line, i) => (
+               <Box key={i}>
+-                <Box width={promptWidth}>
+-                  {i === 0 ? (
+-                    <PromptPrefix color={ui.theme.color.muted} promptText={promptText} width={promptWidth} />
+-                  ) : (
+-                    <Text color={ui.theme.color.muted}>{promptBlank}</Text>
+-                  )}
+-                </Box>
++                {!oc && (
++                  <Box width={promptWidth}>
++                    {i === 0 ? (
++                      <PromptPrefix color={ui.theme.color.muted} promptText={promptText} width={promptWidth} />
++                    ) : (
++                      <Text color={ui.theme.color.muted}>{promptBlank}</Text>
++                    )}
++                  </Box>
++                )}
+ 
+                 <Text color={ui.theme.color.text}>{line || ' '}</Text>
+               </Box>
+@@ -447,17 +496,19 @@ const ComposerPane = memo(function ComposerPane({
+               onMouseDrag={dragFromPromptRow}
+               onMouseUp={endInputDrag}
+               position="relative"
+-              width={Math.max(1, composer.cols - 2)}
++              width={Math.max(1, composer.cols - (oc ? 3 : 2))}
+             >
+-              <Box width={promptWidth}>
+-                {sh ? (
+-                  <PromptPrefix color={ui.theme.color.shellDollar} promptText={promptText} width={promptWidth} />
+-                ) : composer.inputBuf.length ? (
+-                  <Text color={ui.theme.color.prompt}>{promptBlank}</Text>
+-                ) : (
+-                  <PromptPrefix bold color={ui.theme.color.prompt} promptText={promptText} width={promptWidth} />
+-                )}
+-              </Box>
++              {!oc && (
++                <Box width={promptWidth}>
++                  {sh ? (
++                    <PromptPrefix color={ui.theme.color.shellDollar} promptText={promptText} width={promptWidth} />
++                  ) : composer.inputBuf.length ? (
++                    <Text color={ui.theme.color.prompt}>{promptBlank}</Text>
++                  ) : (
++                    <PromptPrefix bold color={ui.theme.color.prompt} promptText={promptText} width={promptWidth} />
++                  )}
++                </Box>
++              )}
+ 
+               <Box flexGrow={0} flexShrink={0} height={inputHeight} width={inputColumns}>
+                 {/* Reserve the transcript scrollbar gutter too so typing never rewraps when the scrollbar column repaints. */}
+@@ -470,7 +521,12 @@ const ComposerPane = memo(function ComposerPane({
+                   onChange={composer.updateInput}
+                   onPaste={composer.handleTextPaste}
+                   onSubmit={composer.submit}
+-                  placeholder={composerHint(voicePartial, composer.empty, ui.busy ? T.composer.interruptHint : '')}
++                  placeholder={
++                    voicePartial ||
++                    (oc && fresh
++                      ? 'Peça qualquer coisa… "Explique este repositório"'
++                      : composerHint(voicePartial, composer.empty, ui.busy ? T.composer.interruptHint : ''))
++                  }
+                   // Exactly the "(and N more toolsets…)" tone. `muted` is a
+                   // MID-luminance family tone, so it reads receded on both
+                   // poles even when polarity detection is wrong (transparent
+@@ -486,8 +542,20 @@ const ComposerPane = memo(function ComposerPane({
                  <GoodVibesHeart t={ui.theme} tick={status.goodVibesTick} />
                </Box>
              </Box>
-+            {ui.layout === 'opencode' && (
-+              <OpencodeModelLine agent={ui.agentMode} model={ui.info?.model ?? ''} t={ui.theme} />
+-          </>
++            {oc && (
++              <OpencodeModelLine
++                agent={ui.agentMode}
++                model={ui.info?.model ?? ''}
++                provider={ui.info?.provider}
++                t={ui.theme}
++                tier={ui.info?.service_tier}
++              />
 +            )}
-           </>
++          </Box>
          )}
++        {oc && <OpencodeHints t={ui.theme} />}
++
++        {!nativeMode && <FloatingOverlays {...floatingOverlayProps} />}
        </Box>
-@@ -594,6 +627,15 @@ export const AppLayout = memo(function AppLayout({
+ 
+       {nativeMode && <FloatingOverlays {...floatingOverlayProps} nativeMode />}
+@@ -532,6 +600,11 @@ const StatusRulePane = memo(function StatusRulePane({
+ }: Pick<AppLayoutProps, 'composer' | 'status'> & { at: 'bottom' | 'top'; nativeMode: boolean }) {
+   const ui = useStore($uiState)
+ 
++  // openhermes: the opencode layout renders its own footer (OpencodeStatusBar).
++  if (ui.layout === 'opencode') {
++    return null
++  }
++
+   if (ui.statusBar === 'off' || (nativeMode ? at !== 'top' : ui.statusBar !== at)) {
+     return null
+   }
+@@ -591,9 +664,39 @@ export const AppLayout = memo(function AppLayout({
+   const Shell = INLINE_MODE ? Fragment : AlternateScreen
+   const shellProps = INLINE_MODE ? {} : { mouseTracking }
+ 
++  // openhermes: a fresh opencode session centers logo + composer as one
++  // block (exactly like the preview). After the first user message the
++  // classic docked composer takes over at the bottom.
++  const freshOC = ui.layout === 'opencode' && !transcript.historyItems.some(m => m.role === 'user')
++  const welcomeWidth = Math.min(71, Math.max(20, composer.cols - 4))
++
    return (
      <Shell {...shellProps}>
        <Box flexDirection="column" flexGrow={1} position={NATIVE_MODE ? undefined : 'relative'}>
 +        {ui.layout === 'opencode' && (
 +          <OpencodeTabs
-+            fresh={!transcript.historyItems.some(m => m.role === 'user')}
++            fresh={freshOC}
 +            onClose={actions.closeLiveSession}
 +            onNew={actions.newLiveSession}
 +            onSelect={actions.activateLiveSession}
 +            t={ui.theme}
 +          />
 +        )}
++        {freshOC && !overlay.agents && !overlay.journey ? (
++          <Box alignItems="center" flexDirection="column" flexGrow={1} justifyContent="center">
++            <OpencodeIntro t={ui.theme} />
++            <Box flexDirection="column" width={welcomeWidth}>
++              <ComposerPane
++                actions={actions}
++                composer={{ ...composer, cols: welcomeWidth }}
++                cursorSnapshotRef={cursorSnapshotRef}
++                fresh
++                nativeMode={NATIVE_MODE}
++                status={status}
++              />
++            </Box>
++          </Box>
++        ) : (
          <Box flexDirection="row" flexGrow={1}>
            {!overlay.agents && !overlay.journey && <AmbientRail side="left" />}
            {overlay.agents ? (
+@@ -617,8 +720,9 @@ export const AppLayout = memo(function AppLayout({
+           )}
+           {!overlay.agents && !overlay.journey && <AmbientRail side="right" />}
+         </Box>
++        )}
+ 
+-        {!overlay.agents && !overlay.journey && (
++        {!overlay.agents && !overlay.journey && !freshOC && (
+           <>
+             <PerfPane id="prompt">
+               <PromptZone
+@@ -652,6 +756,10 @@ export const AppLayout = memo(function AppLayout({
+           </>
+         )}
+ 
++        {ui.layout === 'opencode' && !overlay.agents && !overlay.journey && (
++          <OpencodeStatusBar fresh={freshOC} info={ui.info} t={ui.theme} usage={ui.usage} />
++        )}
++
+         {!overlay.agents && !NATIVE_MODE && <PetPane />}
+       </Box>
+ 
 diff --git a/ui-tui/src/components/appOverlays.tsx b/ui-tui/src/components/appOverlays.tsx
 index 9de4c52c03..eeb9c1f90e 100644
 --- a/ui-tui/src/components/appOverlays.tsx
@@ -478,7 +752,7 @@ index 9de4c52c03..eeb9c1f90e 100644
  
 diff --git a/ui-tui/src/components/opencode.tsx b/ui-tui/src/components/opencode.tsx
 new file mode 100644
-index 0000000000..baaa7abc1c
+index 0000000000..7c78b8dfcf
 --- /dev/null
 +++ b/ui-tui/src/components/opencode.tsx
 @@ -0,0 +1,295 @@
@@ -558,7 +832,7 @@ index 0000000000..baaa7abc1c
 +  const where = [model, provider].filter(Boolean).join(' ')
 +
 +  return (
-+    <Box paddingX={1}>
++    <Box>
 +      <Text color={t.color.muted} wrap="truncate-end">
 +        <Text bold color={t.color.accent}>
 +          {agent}
