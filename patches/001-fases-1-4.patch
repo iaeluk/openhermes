@@ -1,7 +1,7 @@
-diff --git c/hermes_cli/config_defaults.py w/hermes_cli/config_defaults.py
+diff --git a/hermes_cli/config_defaults.py b/hermes_cli/config_defaults.py
 index 76b6fbd23a..c864faeefd 100644
---- c/hermes_cli/config_defaults.py
-+++ w/hermes_cli/config_defaults.py
+--- a/hermes_cli/config_defaults.py
++++ b/hermes_cli/config_defaults.py
 @@ -838,6 +838,9 @@ DEFAULT_CONFIG = {
          # Interface bare `hermes`/`hermes chat` launches: "cli" (prompt_toolkit REPL) | "tui" (Ink).
          # Flags win: `--cli` forces the REPL, `--tui` / HERMES_TUI=1 forces the TUI.
@@ -12,10 +12,10 @@ index 76b6fbd23a..c864faeefd 100644
          # Native TUI uses the terminal's primary buffer and scrollback instead of the custom
          # alternate-screen viewport. Flags win: `--native` / `--tui-native` and `--cli`.
          "tui_native": False,
-diff --git c/ui-tui/src/__tests__/useConfigSync.test.ts w/ui-tui/src/__tests__/useConfigSync.test.ts
+diff --git a/ui-tui/src/__tests__/useConfigSync.test.ts b/ui-tui/src/__tests__/useConfigSync.test.ts
 index 79c38f0749..25cbe15162 100644
---- c/ui-tui/src/__tests__/useConfigSync.test.ts
-+++ w/ui-tui/src/__tests__/useConfigSync.test.ts
+--- a/ui-tui/src/__tests__/useConfigSync.test.ts
++++ b/ui-tui/src/__tests__/useConfigSync.test.ts
 @@ -47,6 +47,19 @@ describe('applyDisplay', () => {
      expect(s.streaming).toBe(false)
    })
@@ -36,10 +36,10 @@ index 79c38f0749..25cbe15162 100644
    it('hydrates the destructive slash confirmation policy from approvals', () => {
      const setBell = vi.fn()
  
-diff --git c/ui-tui/src/__tests__/useSubmission.test.ts w/ui-tui/src/__tests__/useSubmission.test.ts
+diff --git a/ui-tui/src/__tests__/useSubmission.test.ts b/ui-tui/src/__tests__/useSubmission.test.ts
 index 9529b20218..e5c462b182 100644
---- c/ui-tui/src/__tests__/useSubmission.test.ts
-+++ w/ui-tui/src/__tests__/useSubmission.test.ts
+--- a/ui-tui/src/__tests__/useSubmission.test.ts
++++ b/ui-tui/src/__tests__/useSubmission.test.ts
 @@ -1,7 +1,26 @@
  import { describe, expect, it } from 'vitest'
  
@@ -68,10 +68,10 @@ index 9529b20218..e5c462b182 100644
  
  describe('prepareSubmission', () => {
    it('keeps the collapsed paste for display and expands the model payload', () => {
-diff --git c/ui-tui/src/app/interfaces.ts w/ui-tui/src/app/interfaces.ts
+diff --git a/ui-tui/src/app/interfaces.ts b/ui-tui/src/app/interfaces.ts
 index b51aa8525d..1048b3dd74 100644
---- c/ui-tui/src/app/interfaces.ts
-+++ w/ui-tui/src/app/interfaces.ts
+--- a/ui-tui/src/app/interfaces.ts
++++ b/ui-tui/src/app/interfaces.ts
 @@ -302,6 +302,7 @@ export interface OverlayState {
    widget: ActiveWidget | null
    journey: boolean
@@ -94,10 +94,10 @@ index b51aa8525d..1048b3dd74 100644
    mouseTracking: MouseTrackingMode
    notice: Notice | null
    pasteCollapseLines: number
-diff --git c/ui-tui/src/app/overlayStore.ts w/ui-tui/src/app/overlayStore.ts
+diff --git a/ui-tui/src/app/overlayStore.ts b/ui-tui/src/app/overlayStore.ts
 index 0c3ea9d7d4..aa0342c371 100644
---- c/ui-tui/src/app/overlayStore.ts
-+++ w/ui-tui/src/app/overlayStore.ts
+--- a/ui-tui/src/app/overlayStore.ts
++++ b/ui-tui/src/app/overlayStore.ts
 @@ -16,6 +16,7 @@ const buildOverlayState = (): OverlayState => ({
    widget: null,
    journey: false,
@@ -130,10 +130,10 @@ index 0c3ea9d7d4..aa0342c371 100644
      petPicker: $overlayState.get().petPicker,
      pluginsHub: $overlayState.get().pluginsHub,
      sessions: $overlayState.get().sessions,
-diff --git c/ui-tui/src/app/uiStore.ts w/ui-tui/src/app/uiStore.ts
+diff --git a/ui-tui/src/app/uiStore.ts b/ui-tui/src/app/uiStore.ts
 index b29c0ecea1..2ed15bceae 100644
---- c/ui-tui/src/app/uiStore.ts
-+++ w/ui-tui/src/app/uiStore.ts
+--- a/ui-tui/src/app/uiStore.ts
++++ b/ui-tui/src/app/uiStore.ts
 @@ -24,6 +24,8 @@ const buildUiState = (): UiState => ({
    info: null,
    liveSessionCount: 0,
@@ -143,10 +143,10 @@ index b29c0ecea1..2ed15bceae 100644
    mouseTracking: MOUSE_TRACKING,
    notice: null,
    pasteCollapseLines: 5,
-diff --git c/ui-tui/src/app/useConfigSync.ts w/ui-tui/src/app/useConfigSync.ts
+diff --git a/ui-tui/src/app/useConfigSync.ts b/ui-tui/src/app/useConfigSync.ts
 index 7b6c422fe6..1ebdc57da5 100644
---- c/ui-tui/src/app/useConfigSync.ts
-+++ w/ui-tui/src/app/useConfigSync.ts
+--- a/ui-tui/src/app/useConfigSync.ts
++++ b/ui-tui/src/app/useConfigSync.ts
 @@ -309,6 +309,7 @@ export const applyDisplay = (
      focusView: !!d.focus_view,
      indicatorStyle: normalizeIndicatorStyle(d.tui_status_indicator),
@@ -155,10 +155,10 @@ index 7b6c422fe6..1ebdc57da5 100644
      mouseTracking: normalizeMouseTracking(d),
      pasteCollapseLines: _pasteCollapseLinesFromConfig(cfg),
      pasteCollapseChars: _pasteCollapseCharsFromConfig(cfg),
-diff --git c/ui-tui/src/app/useInputHandlers.ts w/ui-tui/src/app/useInputHandlers.ts
+diff --git a/ui-tui/src/app/useInputHandlers.ts b/ui-tui/src/app/useInputHandlers.ts
 index fffce936e7..e27a1bebce 100644
---- c/ui-tui/src/app/useInputHandlers.ts
-+++ w/ui-tui/src/app/useInputHandlers.ts
+--- a/ui-tui/src/app/useInputHandlers.ts
++++ b/ui-tui/src/app/useInputHandlers.ts
 @@ -25,7 +25,7 @@ import { $isBlocked, $overlayState, hasSensitivePrompt, patchOverlayState, SENSI
  import { respondToServerRequest } from './serverRequestStore.js'
  import { turnController } from './turnController.js'
@@ -219,10 +219,10 @@ index fffce936e7..e27a1bebce 100644
        if (!live.sid) {
          return void actions.sys(t('session.input.yoloNeedsSession'))
        }
-diff --git c/ui-tui/src/app/useSubmission.ts w/ui-tui/src/app/useSubmission.ts
+diff --git a/ui-tui/src/app/useSubmission.ts b/ui-tui/src/app/useSubmission.ts
 index 073a6db67b..46b9a0eda1 100644
---- c/ui-tui/src/app/useSubmission.ts
-+++ w/ui-tui/src/app/useSubmission.ts
+--- a/ui-tui/src/app/useSubmission.ts
++++ b/ui-tui/src/app/useSubmission.ts
 @@ -63,6 +63,19 @@ export const prepareSlashSubmission = (display: string, tokens: ComposerToken[])
  
  export const shouldInterpolateSubmission = (display: string) => hasInterpolation(display)
@@ -252,10 +252,10 @@ index 073a6db67b..46b9a0eda1 100644
      },
      [appendMessage, composerActions, composerRefs, composerState, dispatchSubmission, gw, sys]
    )
-diff --git c/ui-tui/src/components/appLayout.tsx w/ui-tui/src/components/appLayout.tsx
+diff --git a/ui-tui/src/components/appLayout.tsx b/ui-tui/src/components/appLayout.tsx
 index 2808ae5ccd..89214008c5 100644
---- c/ui-tui/src/components/appLayout.tsx
-+++ w/ui-tui/src/components/appLayout.tsx
+--- a/ui-tui/src/components/appLayout.tsx
++++ b/ui-tui/src/components/appLayout.tsx
 @@ -36,6 +36,7 @@ import { GoalBar } from './goalBar.js'
  import { HelpHint } from './helpHint.js'
  import { Journey } from './journey.js'
@@ -342,10 +342,10 @@ index 2808ae5ccd..89214008c5 100644
          <Box flexDirection="row" flexGrow={1}>
            {!overlay.agents && !overlay.journey && <AmbientRail side="left" />}
            {overlay.agents ? (
-diff --git c/ui-tui/src/components/appOverlays.tsx w/ui-tui/src/components/appOverlays.tsx
-index 9de4c52c03..10926a5a27 100644
---- c/ui-tui/src/components/appOverlays.tsx
-+++ w/ui-tui/src/components/appOverlays.tsx
+diff --git a/ui-tui/src/components/appOverlays.tsx b/ui-tui/src/components/appOverlays.tsx
+index 9de4c52c03..3435b11796 100644
+--- a/ui-tui/src/components/appOverlays.tsx
++++ b/ui-tui/src/components/appOverlays.tsx
 @@ -5,7 +5,7 @@ import type { ReactNode } from 'react'
  import { useGateway } from '../app/gatewayContext.js'
  import type { AppOverlaysProps } from '../app/interfaces.js'
@@ -375,7 +375,7 @@ index 9de4c52c03..10926a5a27 100644
  
    const start = Math.max(0, Math.min(compIdx - Math.floor(COMPLETION_WINDOW / 2), completions.length - viewportSize))
  
-@@ -298,6 +302,23 @@ export function FloatingOverlays({
+@@ -298,6 +302,27 @@ export function FloatingOverlays({
      })
    }
  
@@ -387,8 +387,12 @@ index 9de4c52c03..10926a5a27 100644
 +          <OpencodePalette
 +            onCancel={() => patchOverlayState({ opencodePalette: false })}
 +            onNewSession={onNewLiveSession}
++            onOpenConnectors={() =>
++              patchOverlayState({ opencodePalette: false, connectors: true })}
 +            onOpenModelPicker={() => patchOverlayState({ opencodePalette: false, modelPicker: true })}
++            onOpenPluginsHub={() => patchOverlayState({ opencodePalette: false, pluginsHub: true })}
 +            onOpenSessions={() => patchOverlayState({ opencodePalette: false, sessions: true })}
++            onOpenSkillsHub={() => patchOverlayState({ opencodePalette: false, skillsHub: true })}
 +            t={theme}
 +          />
 +        </FloatBox>
@@ -399,11 +403,11 @@ index 9de4c52c03..10926a5a27 100644
    if (overlay.modelPicker) {
      const initialRefresh = typeof overlay.modelPicker === 'object' && overlay.modelPicker.refresh === true
  
-diff --git c/ui-tui/src/components/opencode.tsx w/ui-tui/src/components/opencode.tsx
+diff --git a/ui-tui/src/components/opencode.tsx b/ui-tui/src/components/opencode.tsx
 new file mode 100644
 index 0000000000..eb47fe23f2
 --- /dev/null
-+++ w/ui-tui/src/components/opencode.tsx
++++ b/ui-tui/src/components/opencode.tsx
 @@ -0,0 +1,153 @@
 +import { Box, Text } from '@hermes/ink'
 +import { useStore } from '@nanostores/react'
@@ -558,12 +562,12 @@ index 0000000000..eb47fe23f2
 +    </Box>
 +  )
 +})
-diff --git c/ui-tui/src/components/opencodePalette.tsx w/ui-tui/src/components/opencodePalette.tsx
+diff --git a/ui-tui/src/components/opencodePalette.tsx b/ui-tui/src/components/opencodePalette.tsx
 new file mode 100644
-index 0000000000..2bbf09afde
+index 0000000000..98922520aa
 --- /dev/null
-+++ w/ui-tui/src/components/opencodePalette.tsx
-@@ -0,0 +1,305 @@
++++ b/ui-tui/src/components/opencodePalette.tsx
+@@ -0,0 +1,323 @@
 +import { Box, Text, useInput } from '@hermes/ink'
 +import { memo, useEffect, useState } from 'react'
 +
@@ -599,16 +603,22 @@ index 0000000000..2bbf09afde
 +export interface OpencodePaletteProps {
 +  onCancel: () => void
 +  onNewSession: () => void
++  onOpenConnectors: () => void
 +  onOpenModelPicker: () => void
++  onOpenPluginsHub: () => void
 +  onOpenSessions: () => void
++  onOpenSkillsHub: () => void
 +  t: Theme
 +}
 +
 +export const OpencodePalette = memo(function OpencodePalette({
 +  onCancel,
 +  onNewSession,
++  onOpenConnectors,
 +  onOpenModelPicker,
++  onOpenPluginsHub,
 +  onOpenSessions,
++  onOpenSkillsHub,
 +  t
 +}: OpencodePaletteProps) {
 +  const { rpc } = useGateway()
@@ -701,7 +711,19 @@ index 0000000000..2bbf09afde
 +      },
 +      {
 +        group: 'Session',
-+        items: [{ hint: 'ctrl+x n', label: 'New session', run: onNewSession }]
++        items: [
++          { hint: 'ctrl+x l', label: 'Switch session', run: onOpenSessions },
++          { hint: 'ctrl+x n', label: 'New session', run: onNewSession },
++          { hint: 'ctrl+o', label: 'Open session or project', run: onOpenSessions }
++        ]
++      },
++      {
++        group: 'Tools',
++        items: [
++          { label: 'Skills', run: onOpenSkillsHub },
++          { label: 'Plugins', run: onOpenPluginsHub },
++          { label: 'Connect an integration', run: onOpenConnectors }
++        ]
 +      },
 +      {
 +        group: 'Appearance',
@@ -869,10 +891,10 @@ index 0000000000..2bbf09afde
 +export function openOpencodePalette() {
 +  patchOverlayState({ opencodePalette: true })
 +}
-diff --git c/ui-tui/src/gatewayTypes.ts w/ui-tui/src/gatewayTypes.ts
+diff --git a/ui-tui/src/gatewayTypes.ts b/ui-tui/src/gatewayTypes.ts
 index e82e83a4f2..4b101f537f 100644
---- c/ui-tui/src/gatewayTypes.ts
-+++ w/ui-tui/src/gatewayTypes.ts
+--- a/ui-tui/src/gatewayTypes.ts
++++ b/ui-tui/src/gatewayTypes.ts
 @@ -81,6 +81,9 @@ export interface ConfigDisplayConfig {
    /** Focus view (/focus) — display-only reduced-output mode. */
    focus_view?: boolean
