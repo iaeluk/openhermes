@@ -469,7 +469,7 @@ index 967f269065..6e1cd2f041 100644
      .trim()
      .toLowerCase()
 diff --git a/ui-tui/src/components/appLayout.tsx b/ui-tui/src/components/appLayout.tsx
-index 2808ae5ccd..40111d8b58 100644
+index 2808ae5ccd..07e012bddf 100644
 --- a/ui-tui/src/components/appLayout.tsx
 +++ b/ui-tui/src/components/appLayout.tsx
 @@ -36,6 +36,7 @@ import { GoalBar } from './goalBar.js'
@@ -480,7 +480,7 @@ index 2808ae5ccd..40111d8b58 100644
  import { PetKitty, PetSprite } from './petSprite.js'
  import { QueuedMessages } from './queuedMessages.js'
  import { LiveTodoPanel, StreamingAssistant } from './streamingAssistant.js'
-@@ -201,14 +202,16 @@ const TranscriptPane = memo(function TranscriptPane({
+@@ -201,14 +202,20 @@ const TranscriptPane = memo(function TranscriptPane({
  
        {transcript.virtualRows.slice(transcript.virtualHistory.start, transcript.virtualHistory.end).map(row => (
          <Box flexDirection="column" key={row.key} ref={transcript.virtualHistory.measureRef(row.key)}>
@@ -494,12 +494,16 @@ index 2808ae5ccd..40111d8b58 100644
            {row.msg.kind === 'intro' ? (
 -            nativeMode ? null : (
 +            nativeMode ? null : ui.layout === 'opencode' ? (
-+              <OpencodeIntro name={ui.agentName} t={ui.theme} />
++              // openhermes: the welcome (logo/name) hides once the conversation
++              // starts, exactly like the preview (body.chatting #welcome).
++              firstUserIdx >= 0 ? null : (
++                <OpencodeIntro name={ui.agentName} t={ui.theme} />
++              )
 +            ) : (
                <Box flexDirection="column" paddingTop={1}>
                  <Banner maxWidth={Math.max(1, composer.cols - 2)} t={ui.theme} />
  
-@@ -224,6 +227,25 @@ const TranscriptPane = memo(function TranscriptPane({
+@@ -224,6 +231,25 @@ const TranscriptPane = memo(function TranscriptPane({
              )
            ) : row.msg.kind === 'panel' && row.msg.panelData ? (
              <Panel sections={row.msg.panelData.sections} t={ui.theme} title={row.msg.panelData.title} />
@@ -525,7 +529,7 @@ index 2808ae5ccd..40111d8b58 100644
            ) : (
              <MessageLine
                cols={bodyCols}
-@@ -242,6 +264,15 @@ const TranscriptPane = memo(function TranscriptPane({
+@@ -242,6 +268,15 @@ const TranscriptPane = memo(function TranscriptPane({
              />
            )}
  
@@ -541,7 +545,7 @@ index 2808ae5ccd..40111d8b58 100644
            {row.index === lastUserIdx && <LiveTodoPanel />}
          </Box>
        ))}
-@@ -304,10 +335,13 @@ const ComposerPane = memo(function ComposerPane({
+@@ -304,10 +339,13 @@ const ComposerPane = memo(function ComposerPane({
    actions,
    composer,
    cursorSnapshotRef,
@@ -555,7 +559,7 @@ index 2808ae5ccd..40111d8b58 100644
    nativeMode: boolean
  }) {
    const ui = useStore($uiState)
-@@ -315,6 +349,7 @@ const ComposerPane = memo(function ComposerPane({
+@@ -315,6 +353,7 @@ const ComposerPane = memo(function ComposerPane({
    const T = useT()
    const isBlocked = useStore($isBlocked)
    const sh = (composer.inputBuf[0] ?? composer.input).startsWith('!')
@@ -563,7 +567,7 @@ index 2808ae5ccd..40111d8b58 100644
  
    const promptText = composerPromptText(
      ui.theme.brand.prompt,
-@@ -326,7 +361,9 @@ const ComposerPane = memo(function ComposerPane({
+@@ -326,7 +365,9 @@ const ComposerPane = memo(function ComposerPane({
  
    const promptWidth = composerPromptWidth(promptText)
    const promptBlank = ' '.repeat(promptWidth)
@@ -574,7 +578,7 @@ index 2808ae5ccd..40111d8b58 100644
    const inputHeight = inputVisualHeight(composer.input, inputColumns)
    const inputMouseRef = useRef<null | TextInputMouseApi>(null)
  
-@@ -347,7 +384,7 @@ const ComposerPane = memo(function ComposerPane({
+@@ -347,7 +388,7 @@ const ComposerPane = memo(function ComposerPane({
      }
  
      e.stopImmediatePropagation?.()
@@ -583,7 +587,7 @@ index 2808ae5ccd..40111d8b58 100644
    }
  
    // Spacer rows live on a different vertical origin; only the column is
-@@ -359,7 +396,7 @@ const ComposerPane = memo(function ComposerPane({
+@@ -359,7 +400,7 @@ const ComposerPane = memo(function ComposerPane({
      }
  
      e.stopImmediatePropagation?.()
@@ -592,7 +596,7 @@ index 2808ae5ccd..40111d8b58 100644
    }
  
    const endInputDrag = () => inputMouseRef.current?.end()
-@@ -422,21 +459,34 @@ const ComposerPane = memo(function ComposerPane({
+@@ -422,21 +463,34 @@ const ComposerPane = memo(function ComposerPane({
          marginTop={nativeMode || ui.statusBar === 'top' ? 0 : 1}
          position={nativeMode ? undefined : 'relative'}
        >
@@ -637,7 +641,7 @@ index 2808ae5ccd..40111d8b58 100644
  
                  <Text color={ui.theme.color.text}>{line || ' '}</Text>
                </Box>
-@@ -447,17 +497,19 @@ const ComposerPane = memo(function ComposerPane({
+@@ -447,17 +501,19 @@ const ComposerPane = memo(function ComposerPane({
                onMouseDrag={dragFromPromptRow}
                onMouseUp={endInputDrag}
                position="relative"
@@ -667,7 +671,7 @@ index 2808ae5ccd..40111d8b58 100644
  
                <Box flexGrow={0} flexShrink={0} height={inputHeight} width={inputColumns}>
                  {/* Reserve the transcript scrollbar gutter too so typing never rewraps when the scrollbar column repaints. */}
-@@ -470,7 +522,12 @@ const ComposerPane = memo(function ComposerPane({
+@@ -470,7 +526,12 @@ const ComposerPane = memo(function ComposerPane({
                    onChange={composer.updateInput}
                    onPaste={composer.handleTextPaste}
                    onSubmit={composer.submit}
@@ -675,13 +679,13 @@ index 2808ae5ccd..40111d8b58 100644
 +                  placeholder={
 +                    voicePartial ||
 +                    (oc && fresh
-+                      ? 'Peça qualquer coisa… "Explique este repositório"'
++                      ? 'Ask anything… "Explain this repository"'
 +                      : composerHint(voicePartial, composer.empty, ui.busy ? T.composer.interruptHint : ''))
 +                  }
                    // Exactly the "(and N more toolsets…)" tone. `muted` is a
                    // MID-luminance family tone, so it reads receded on both
                    // poles even when polarity detection is wrong (transparent
-@@ -486,8 +543,23 @@ const ComposerPane = memo(function ComposerPane({
+@@ -486,8 +547,23 @@ const ComposerPane = memo(function ComposerPane({
                  <GoodVibesHeart t={ui.theme} tick={status.goodVibesTick} />
                </Box>
              </Box>
@@ -706,7 +710,7 @@ index 2808ae5ccd..40111d8b58 100644
        </Box>
  
        {nativeMode && <FloatingOverlays {...floatingOverlayProps} nativeMode />}
-@@ -532,6 +604,11 @@ const StatusRulePane = memo(function StatusRulePane({
+@@ -532,6 +608,11 @@ const StatusRulePane = memo(function StatusRulePane({
  }: Pick<AppLayoutProps, 'composer' | 'status'> & { at: 'bottom' | 'top'; nativeMode: boolean }) {
    const ui = useStore($uiState)
  
@@ -718,7 +722,7 @@ index 2808ae5ccd..40111d8b58 100644
    if (ui.statusBar === 'off' || (nativeMode ? at !== 'top' : ui.statusBar !== at)) {
      return null
    }
-@@ -591,9 +668,39 @@ export const AppLayout = memo(function AppLayout({
+@@ -591,9 +672,39 @@ export const AppLayout = memo(function AppLayout({
    const Shell = INLINE_MODE ? Fragment : AlternateScreen
    const shellProps = INLINE_MODE ? {} : { mouseTracking }
  
@@ -758,7 +762,7 @@ index 2808ae5ccd..40111d8b58 100644
          <Box flexDirection="row" flexGrow={1}>
            {!overlay.agents && !overlay.journey && <AmbientRail side="left" />}
            {overlay.agents ? (
-@@ -617,8 +724,9 @@ export const AppLayout = memo(function AppLayout({
+@@ -617,8 +728,9 @@ export const AppLayout = memo(function AppLayout({
            )}
            {!overlay.agents && !overlay.journey && <AmbientRail side="right" />}
          </Box>
@@ -769,7 +773,7 @@ index 2808ae5ccd..40111d8b58 100644
            <>
              <PerfPane id="prompt">
                <PromptZone
-@@ -652,6 +760,10 @@ export const AppLayout = memo(function AppLayout({
+@@ -652,6 +764,10 @@ export const AppLayout = memo(function AppLayout({
            </>
          )}
  
@@ -881,10 +885,10 @@ index 135448153f..ec75df72bb 100644
    detailsMode?: DetailsMode
 diff --git a/ui-tui/src/components/opencode.tsx b/ui-tui/src/components/opencode.tsx
 new file mode 100644
-index 0000000000..3f8e82a00e
+index 0000000000..141dfd5b4c
 --- /dev/null
 +++ b/ui-tui/src/components/opencode.tsx
-@@ -0,0 +1,315 @@
+@@ -0,0 +1,317 @@
 +import { Box, Text } from '@hermes/ink'
 +import { compactNumber } from '@hermes/shared/format'
 +import type { Usage } from '@hermes/shared/gateway-events'
@@ -913,12 +917,14 @@ index 0000000000..3f8e82a00e
 +  const custom = (name ?? '').trim()
 +
 +  // Custom home-screen name (preview parity): anything but empty/"hermes"
-+  // renders as big uppercase text instead of the block logo.
++  // renders big in spaced capitals instead of the block logo.
 +  if (custom && custom.toLowerCase() !== 'hermes') {
++    const spaced = custom.toUpperCase().slice(0, 24).split('').join(' ')
++
 +    return (
 +      <Box alignItems="center" flexDirection="column" paddingY={2}>
 +        <Text bold color={t.color.text}>
-+          {custom.toUpperCase().slice(0, 24)}
++          {spaced}
 +        </Text>
 +      </Box>
 +    )
@@ -1001,9 +1007,9 @@ index 0000000000..3f8e82a00e
 +      <Text color={t.color.muted}>~</Text>
 +      <Text color={t.color.muted} wrap="truncate-end">
 +        <Text color={t.color.text}>shift+tab</Text>
-+        {' agentes  '}
++        {' agents  '}
 +        <Text color={t.color.text}>ctrl+p</Text>
-+        {' comandos'}
++        {' commands'}
 +      </Text>
 +    </Box>
 +  )
@@ -1030,7 +1036,7 @@ index 0000000000..3f8e82a00e
 +    return (
 +      <Box flexDirection="row" justifyContent="space-between" paddingX={1}>
 +        <Text color={t.color.muted} wrap="truncate-end">
-+          {`⊙ ${tools} ferramentas · ${skills} skills`}
++          {`⊙ ${tools} tools · ${skills} skills`}
 +        </Text>
 +        <Text color={t.color.muted}>{info?.version ?? ''}</Text>
 +      </Box>
@@ -1202,7 +1208,7 @@ index 0000000000..3f8e82a00e
 +})
 diff --git a/ui-tui/src/components/opencodePalette.tsx b/ui-tui/src/components/opencodePalette.tsx
 new file mode 100644
-index 0000000000..b60ea2c78b
+index 0000000000..8cd8cf7fff
 --- /dev/null
 +++ b/ui-tui/src/components/opencodePalette.tsx
 @@ -0,0 +1,481 @@
@@ -1444,7 +1450,7 @@ index 0000000000..b60ea2c78b
 +        items: [
 +          { label: 'Switch theme', run: () => go('themes') },
 +          { label: 'Color mode', run: cycleColorMode },
-+          { label: 'Mudar nome', run: () => go('name') }
++          { label: 'Change name', run: () => go('name') }
 +        ]
 +      }
 +    )
@@ -1633,7 +1639,7 @@ index 0000000000..b60ea2c78b
 +      {view === 'name' ? (
 +        <>
 +          <Text bold color={t.color.accent}>
-+            Nome na tela inicial (Enter confirma)
++            Home screen name (Enter confirms)
 +          </Text>
 +          <Box borderColor={t.color.border} borderStyle="single" marginTop={1} paddingX={1}>
 +            {nameDraft ? (
@@ -1643,7 +1649,7 @@ index 0000000000..b60ea2c78b
 +              </Text>
 +            ) : (
 +              <Text color={t.color.muted}>
-+                Exemplo: Jarvis
++                Example: Jarvis
 +                <Text inverse> </Text>
 +              </Text>
 +            )}
