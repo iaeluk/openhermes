@@ -1,5 +1,5 @@
 diff --git a/hermes_cli/config_defaults.py b/hermes_cli/config_defaults.py
-index 76b6fbd23a..8aaf52653a 100644
+index 76b6fbd23a..9381c3a664 100644
 --- a/hermes_cli/config_defaults.py
 +++ b/hermes_cli/config_defaults.py
 @@ -838,6 +838,9 @@ DEFAULT_CONFIG = {
@@ -12,30 +12,115 @@ index 76b6fbd23a..8aaf52653a 100644
          # Native TUI uses the terminal's primary buffer and scrollback instead of the custom
          # alternate-screen viewport. Flags win: `--native` / `--tui-native` and `--cli`.
          "tui_native": False,
-@@ -897,6 +900,8 @@ DEFAULT_CONFIG = {
+@@ -897,6 +900,11 @@ DEFAULT_CONFIG = {
          "focus_view": False,
          "focus_saved_tool_progress": "all",
          "skin": "default",
++        # openhermes: TUI-only skin override (empty = follow display.skin,
++        # so Hermes Desktop is unaffected by TUI theme changes).
++        "tui_skin": "",
 +        # openhermes: custom TUI home-screen name (empty/Hermes = block logo).
 +        "agent_name": "",
          # UI language for static messages (approval prompts, some gateway slash replies); not agent
          # responses/logs/tool outputs. en, zh, ja, de, es, fr, tr, uk; unknown → en.
          "language": "en",
+diff --git a/tui_gateway/change_watcher.py b/tui_gateway/change_watcher.py
+index 5669174eab..d627e73026 100644
+--- a/tui_gateway/change_watcher.py
++++ b/tui_gateway/change_watcher.py
+@@ -11,10 +11,10 @@ from .method_ctx import HandlerRegistry, bind_module
+ _registry = HandlerRegistry()
+ 
+ 
+-def resolve_skin() -> dict:
++def _resolve_skin_from_cfg(cfg: dict) -> dict:
+     try:
+         from hermes_cli.skin_engine import init_skin_from_config, get_active_skin
+-        init_skin_from_config(_load_cfg())
++        init_skin_from_config(cfg)
+         skin = get_active_skin()
+         # light/dark are paired palettes: the TUI prefers the block matching terminal polarity.
+         return {
+@@ -29,6 +29,37 @@ def resolve_skin() -> dict:
+         return {}
+ 
+ 
++def resolve_skin() -> dict:
++    return _resolve_skin_from_cfg(_load_cfg())
++
++
++def resolve_tui_skin() -> dict:
++    """TUI-only skin: ``display.tui_skin`` when set, else the shared
++    ``display.skin`` (Hermes Desktop keeps following ``display.skin``).
++
++    Never disturbs the process-global active skin: the patched init is
++    restored before returning."""
++    cfg = _load_cfg()
++    tui = str((cfg.get("display") or {}).get("tui_skin") or "").strip()
++    if not tui:
++        return resolve_skin()
++    try:
++        from hermes_cli.skin_engine import get_active_skin_name
++        prev = get_active_skin_name()
++    except Exception:
++        prev = None
++    try:
++        patched = {**cfg, "display": {**(cfg.get("display") or {}), "skin": tui}}
++        return _resolve_skin_from_cfg(patched)
++    finally:
++        if prev:
++            try:
++                from hermes_cli.skin_engine import set_active_skin
++                set_active_skin(prev)
++            except Exception:
++                pass
++
++
+ # (name, user-file mtime) of the last skin broadcast: ``skin.changed`` fires on a name
+ # switch OR a live color edit of the active skin, and nothing else.
+ _last_skin_sig: tuple[str, float | None] | None = None
 diff --git a/tui_gateway/methods_config.py b/tui_gateway/methods_config.py
-index 312c032206..07bca15cb0 100644
+index 312c032206..22b2f2d242 100644
 --- a/tui_gateway/methods_config.py
 +++ b/tui_gateway/methods_config.py
-@@ -276,6 +276,8 @@ _CONFIG_GETTERS = {
+@@ -7,6 +7,7 @@ import concurrent.futures
+ import threading
+ 
+ from .method_ctx import HandlerRegistry, bind_module
++from .change_watcher import resolve_tui_skin
+ from ._env import env_int
+ 
+ from hermes_constants import DEFAULT_INDICATOR_STYLE, INDICATOR_STYLES
+@@ -276,6 +277,9 @@ _CONFIG_GETTERS = {
      "thinking_mode": _cfg_get_thinking_mode,
      "density": lambda params: {"value": "on" if bool(_display_raw().get("tui_compact", False)) else "off"},
      "theme": lambda params: {"value": _display_word("tui_theme", "auto", {"auto", "light", "dark"})},
++    "tui_skin": lambda params: {"value": str(_display_raw().get("tui_skin", "") or "")},
 +    "layout": lambda params: {"value": _display_word("layout", "classic", {"classic", "opencode"})},
 +    "agent_name": lambda params: {"value": str(_display_raw().get("agent_name", "") or "")},
      "statusbar": lambda params: {"value": _coerce_statusbar(_display_cfg().get("tui_statusbar", "top"))},
      "focus": lambda params: {"value": "on" if bool(_display_cfg().get("focus_view", False)) else "off",
                               "tool_progress": _load_tool_progress_mode()},
+@@ -300,6 +304,17 @@ def _(rid, params: dict) -> dict:
+         return _err(rid, _CONFIG_GET_ERR[key], str(e))
+ 
+ 
++@method("skin.resolve_tui")
++@_profile_scoped
++def _(rid, params: dict) -> dict:
++    """Resolved TUI skin object (``display.tui_skin`` when set, else the
++    shared ``display.skin``) — same shape as ``skin.changed`` payloads."""
++    try:
++        return _ok(rid, resolve_tui_skin())
++    except Exception as e:
++        return _err(rid, 5061, str(e))
++
++
+ # ── setup readiness
+ 
+ def _readiness_cleared(key):
 diff --git a/tui_gateway/methods_config_set.py b/tui_gateway/methods_config_set.py
-index d691c1d2a8..3296014481 100644
+index d691c1d2a8..d4417bfee0 100644
 --- a/tui_gateway/methods_config_set.py
 +++ b/tui_gateway/methods_config_set.py
 @@ -368,6 +368,8 @@ def _word_setters() -> dict:
@@ -47,7 +132,7 @@ index d691c1d2a8..3296014481 100644
          # _raw_word: 0/False/[] keep their text so the error names what was sent.
          "indicator": (_raw_word, INDICATOR_STYLES, "unknown indicator: {raw!r}; pick one of " + "|".join(INDICATOR_STYLES),
                        lambda w: _write_config_key("display.tui_status_indicator", w)),
-@@ -475,6 +477,13 @@ def _set_skin(rid, params, key, value, session):
+@@ -475,6 +477,21 @@ def _set_skin(rid, params, key, value, session):
      return _kv(rid, key, value)
  
  
@@ -58,10 +143,18 @@ index d691c1d2a8..3296014481 100644
 +    return _kv(rid, key, name)
 +
 +
++@_cfgset_guarded
++def _set_tui_skin(rid, params, key, value, session):
++    # TUI-only: no broadcast, so Hermes Desktop keeps following display.skin.
++    name = str(value or "").strip()
++    _write_config_key("display.tui_skin", name)
++    return _kv(rid, key, name)
++
++
  def _set_display_toggle(rid, params, key, value, session):
      on = _BOOL_WORDS.get(str(value).strip().lower())
      if on is None:
-@@ -489,10 +498,10 @@ _CONFIG_SETTERS = {
+@@ -489,10 +506,11 @@ _CONFIG_SETTERS = {
      "model": _set_model, "fast": _set_fast, "busy": _set_busy, "verbose": _set_verbose, "focus": _set_focus,
      "approval_mode": _set_approval_mode, "approvals.mode": _set_word, "yolo": _set_yolo,
      "reasoning": _set_reasoning, "details_mode": _set_word, "thinking_mode": _set_word,
@@ -70,7 +163,8 @@ index d691c1d2a8..3296014481 100644
      "statusbar": _set_toggle, "mouse": _set_toggle, "indicator": _set_word, "voice.voice_chat_mode": _set_word,
      "cwd": _set_cwd, "terminal.cwd": _set_cwd, "workdir": _set_cwd,
 -    "prompt": _set_prompt, "personality": _set_personality, "skin": _set_skin}
-+    "prompt": _set_prompt, "personality": _set_personality, "skin": _set_skin, "agent_name": _set_agent_name}
++    "prompt": _set_prompt, "personality": _set_personality, "skin": _set_skin, "agent_name": _set_agent_name,
++    "tui_skin": _set_tui_skin}
  
  # Keys whose sessionless branch writes a different, wider scope than the session branch (config.yaml's
  # agent.* for every surface, the process env every later child inherits). A non-empty session_id this
@@ -165,8 +259,114 @@ index 9529b20218..e5c462b182 100644
  
  describe('prepareSubmission', () => {
    it('keeps the collapsed paste for display and expands the model payload', () => {
+diff --git a/ui-tui/src/app/createGatewayEventHandler.ts b/ui-tui/src/app/createGatewayEventHandler.ts
+index 97108ba1b4..c5f1fe3dfc 100644
+--- a/ui-tui/src/app/createGatewayEventHandler.ts
++++ b/ui-tui/src/app/createGatewayEventHandler.ts
+@@ -32,7 +32,7 @@ import { applyConnectionRequest, applyConnectionUpdate } from './connectionOpera
+ import { applyDelegationStatus, getDelegationState } from './delegationStore.js'
+ import { createBillingVerificationPresenter, createFreeTierChallengePresenter } from './gatewayBrowserLinks.js'
+ import { applyGoalSnapshot } from './goalStatus.js'
+-import type { GatewayEventHandlerContext, NoticeLevel } from './interfaces.js'
++import type { GatewayEventHandlerContext, GatewayRpc, NoticeLevel } from './interfaces.js'
+ import { getOverlayState, patchOverlayState, SENSITIVE_PROMPTS } from './overlayStore.js'
+ import { flashGoodVibes, flashPet } from './petFlashStore.js'
+ import { forgetServerRequest } from './serverRequestStore.js'
+@@ -194,7 +194,8 @@ const paintTerminalDefaults = (theme: Theme) => {
+   setTerminalForeground(isPaintableHex(background) ? themeToneHex(theme.color.text) : '')
+ }
+ 
+-const applySkin = (s: GatewaySkin) => {
++/** Apply a resolved gateway skin object (also used by the openhermes palette). */
++export const applySkin = (s: GatewaySkin) => {
+   lastSkin = s
+   const theme = themeForSkin(s)
+ 
+@@ -202,6 +203,48 @@ const applySkin = (s: GatewaySkin) => {
+   paintTerminalDefaults(theme)
+ }
+ 
++// openhermes: TUI-only skin override (display.tui_skin). While set, the TUI
++// follows it instead of the shared display.skin — TUI theme changes never
++// reach Hermes Desktop and desktop changes never repaint the TUI.
++let tuiSkinOverride = ''
++let tuiSkinRpc: GatewayRpc | null = null
++
++/** Wire the RPC client once the gateway context exists (create time). */
++export function setTuiSkinRpc(client: GatewayRpc | null): void {
++  tuiSkinRpc = client
++}
++
++const refreshTuiSkin = (): void => {
++  const client = tuiSkinRpc
++
++  if (!client) {
++    return
++  }
++  void (async () => {
++    try {
++      const r = (await client('skin.resolve_tui', {})) as GatewaySkin | null
++
++      if (r && typeof r === 'object' && typeof r.name === 'string') {
++        applySkin(r)
++      }
++    } catch {
++      // Keep the current theme; the config poll retries through sync below.
++    }
++  })()
++}
++
++/** Track display.tui_skin (config poll); re-resolve whenever it changes. */
++export function syncTuiSkinOverride(name: unknown): void {
++  const next = typeof name === 'string' ? name : ''
++
++  if (next === tuiSkinOverride) {
++    return
++  }
++
++  tuiSkinOverride = next
++  refreshTuiSkin()
++}
++
+ /** Re-derive the theme from current detection signals (env overrides, cached
+  *  OSC-11 answer) — used by /theme, config sync, and the OSC listener. */
+ export function reapplyTheme(): void {
+@@ -443,6 +486,10 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
+   syncThemeToTerminalBackground()
+ 
+   const { gw, rpc } = ctx.gateway
++
++  setTuiSkinRpc(rpc)
++  // openhermes: honor a persisted TUI skin override from the first frame.
++  syncTuiSkinOverride(getUiState().tuiSkinName)
+   const { STARTUP_RESUME_ID, newSession, recoverSidRef, resumeById, setCatalog } = ctx.session
+   const { bellOnComplete, bellOnPrompt, stdout, sys } = ctx.system
+ 
+@@ -688,6 +735,11 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
+       applySkin(skin)
+     }
+ 
++    // openhermes: the override wins over the shared skin (no desktop bleed).
++    if (tuiSkinOverride) {
++      refreshTuiSkin()
++    }
++
+     reportStartupLatency(gw)
+ 
+     // Kick off the config fetch once the gateway is actually ready. If handler
+@@ -831,7 +883,9 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
+         return
+ 
+       case 'skin.changed':
+-        if (ev.payload) {
++        // openhermes: while the TUI override is set, shared skin changes
++        // (e.g. from Hermes Desktop) must not repaint the TUI.
++        if (ev.payload && !tuiSkinOverride) {
+           applySkin(ev.payload)
+         }
+ 
 diff --git a/ui-tui/src/app/interfaces.ts b/ui-tui/src/app/interfaces.ts
-index b51aa8525d..8f5b4f50be 100644
+index b51aa8525d..207a295dbe 100644
 --- a/ui-tui/src/app/interfaces.ts
 +++ b/ui-tui/src/app/interfaces.ts
 @@ -302,6 +302,7 @@ export interface OverlayState {
@@ -177,7 +377,7 @@ index b51aa8525d..8f5b4f50be 100644
    pager: null | PagerState
    petPicker: boolean
    pluginsHub: boolean
-@@ -346,6 +347,16 @@ export interface UiState {
+@@ -346,6 +347,19 @@ export interface UiState {
    info: null | SessionInfo
    liveSessionCount: number
    inlineDiffs: boolean
@@ -191,6 +391,9 @@ index b51aa8525d..8f5b4f50be 100644
 +  // openhermes: custom home-screen name (opencode layout). Empty or
 +  // "hermes" (any case) shows the block logo; anything else shows the name.
 +  agentName: string
++  // openhermes: TUI-only skin override (display.tui_skin). Empty = follow
++  // the shared display.skin (Hermes Desktop's theme).
++  tuiSkinName: string
    mouseTracking: MouseTrackingMode
    notice: Notice | null
    pasteCollapseLines: number
@@ -231,7 +434,7 @@ index 0c3ea9d7d4..aa0342c371 100644
      pluginsHub: $overlayState.get().pluginsHub,
      sessions: $overlayState.get().sessions,
 diff --git a/ui-tui/src/app/uiStore.ts b/ui-tui/src/app/uiStore.ts
-index b29c0ecea1..0559e55e0a 100644
+index b29c0ecea1..820f771eb5 100644
 --- a/ui-tui/src/app/uiStore.ts
 +++ b/ui-tui/src/app/uiStore.ts
 @@ -1,3 +1,7 @@
@@ -242,7 +445,7 @@ index b29c0ecea1..0559e55e0a 100644
  import { atom, computed } from 'nanostores'
  
  import { MOUSE_TRACKING } from '../config/env.js'
-@@ -8,6 +12,85 @@ import { DEFAULT_THEME } from '../theme.js'
+@@ -8,6 +12,123 @@ import { DEFAULT_THEME } from '../theme.js'
  
  import { DEFAULT_INDICATOR_STYLE, type UiState } from './interfaces.js'
  
@@ -325,23 +528,71 @@ index b29c0ecea1..0559e55e0a 100644
 +  return ''
 +}
 +
++// openhermes: TUI-only skin override at boot (display.tui_skin).
++const readBootTuiSkin = (): string => {
++  if (process.env.VITEST) {
++    return ''
++  }
++
++  try {
++    const home = process.env.HERMES_HOME ?? join(homedir(), '.hermes')
++    const text = readFileSync(join(home, 'config.yaml'), 'utf8')
++    const lines = text.split('\n')
++    let inDisplay = false
++
++    for (const line of lines) {
++      if (/^display:\s*(#.*)?$/.test(line)) {
++        inDisplay = true
++
++        continue
++      }
++
++      if (inDisplay) {
++        if (/^\S/.test(line)) {
++          break
++        }
++
++        const m = /^\s+tui_skin:\s*["']?(\S*)["']?\s*(#.*)?$/.exec(line)
++
++        if (m?.[1]) {
++          return m[1].slice(0, 64)
++        }
++      }
++    }
++  } catch {
++    // Unreadable config → no override, gateway sync repairs it.
++  }
++
++  return ''
++}
++
  const buildUiState = (): UiState => ({
    battery: false,
    batteryStatus: null,
-@@ -24,6 +107,9 @@ const buildUiState = (): UiState => ({
+@@ -24,6 +145,10 @@ const buildUiState = (): UiState => ({
    info: null,
    liveSessionCount: 0,
    inlineDiffs: true,
 +  layout: readBootLayout(),
 +  agentMode: 'SMART',
 +  agentName: readBootAgentName(),
++  tuiSkinName: readBootTuiSkin(),
    mouseTracking: MOUSE_TRACKING,
    notice: null,
    pasteCollapseLines: 5,
 diff --git a/ui-tui/src/app/useConfigSync.ts b/ui-tui/src/app/useConfigSync.ts
-index 7b6c422fe6..1e90e6f99a 100644
+index 7b6c422fe6..f029275cef 100644
 --- a/ui-tui/src/app/useConfigSync.ts
 +++ b/ui-tui/src/app/useConfigSync.ts
+@@ -9,7 +9,7 @@ import { t } from '../i18n/runtime.js'
+ import { DEFAULT_VOICE_RECORD_KEY, type ParsedVoiceRecordKey, parseVoiceRecordKey } from '../lib/platform.js'
+ import { asRpcResult } from '../lib/rpc.js'
+ 
+-import { applyConfiguredTuiTheme } from './createGatewayEventHandler.js'
++import { applyConfiguredTuiTheme, syncTuiSkinOverride } from './createGatewayEventHandler.js'
+ import {
+   type BusyInputMode,
+   DEFAULT_INDICATOR_STYLE,
 @@ -297,6 +297,7 @@ export const applyDisplay = (
    }
  
@@ -358,6 +609,22 @@ index 7b6c422fe6..1e90e6f99a 100644
      mouseTracking: normalizeMouseTracking(d),
      pasteCollapseLines: _pasteCollapseLinesFromConfig(cfg),
      pasteCollapseChars: _pasteCollapseCharsFromConfig(cfg),
+@@ -317,10 +319,15 @@ export const applyDisplay = (
+     statusBar: normalizeStatusBar(d.tui_statusbar),
+     statusBarFields: normalizeStatusBarFields(d.status_bar?.fields),
+     streaming: d.streaming !== false,
++    // openhermes: TUI-only skin override (empty = follow display.skin).
++    tuiSkinName: typeof d.tui_skin === 'string' ? d.tui_skin : '',
+     // The SAME key that stamps [HH:MM] on classic-CLI labels (#41531) —
+     // no separate TUI knob.
+     timestamps: d.timestamps === true
+   })
++
++  // openhermes: re-resolve the TUI theme whenever the override changes.
++  syncTuiSkinOverride(d.tui_skin)
+ }
+ 
+ export function useConfigSync({
 diff --git a/ui-tui/src/app/useInputHandlers.ts b/ui-tui/src/app/useInputHandlers.ts
 index fffce936e7..e27a1bebce 100644
 --- a/ui-tui/src/app/useInputHandlers.ts
@@ -849,6 +1116,83 @@ index 9de4c52c03..eeb9c1f90e 100644
    if (overlay.modelPicker) {
      const initialRefresh = typeof overlay.modelPicker === 'object' && overlay.modelPicker.refresh === true
  
+diff --git a/ui-tui/src/components/figletFont.ts b/ui-tui/src/components/figletFont.ts
+new file mode 100644
+index 0000000000..bb7fb6136a
+--- /dev/null
++++ b/ui-tui/src/components/figletFont.ts
+@@ -0,0 +1,71 @@
++// openhermes: FIGlet Standard subset (Glenn Chappell, 1993) — professional
++// big-letter glyphs for the custom home-screen name. Extracted once from
++// the upstream .flf and embedded so the TUI needs no runtime font dependency.
++
++export type FigletGlyph = [string, string, string, string, string, string];
++
++export const FIGLET: Record<string, FigletGlyph> = {};
++FIGLET['A'] = ['     _', '    / \\', '   / _ \\', '  / ___ \\', ' /_/   \\_\\', ''];
++FIGLET['B'] = ['  ____', ' | __ )', ' |  _ \\', ' | |_) |', ' |____/', ''];
++FIGLET['C'] = ['   ____', '  / ___|', ' | |', ' | |___', '  \\____|', ''];
++FIGLET['D'] = ['  ____', ' |  _ \\', ' | | | |', ' | |_| |', ' |____/', ''];
++FIGLET['E'] = ['  _____', ' | ____|', ' |  _|', ' | |___', ' |_____|', ''];
++FIGLET['F'] = ['  _____', ' |  ___|', ' | |_', ' |  _|', ' |_|', ''];
++FIGLET['G'] = ['   ____', '  / ___|', ' | |  _', ' | |_| |', '  \\____|', ''];
++FIGLET['H'] = ['  _   _', ' | | | |', ' | |_| |', ' |  _  |', ' |_| |_|', ''];
++FIGLET['I'] = ['  ___', ' |_ _|', '  | |', '  | |', ' |___|', ''];
++FIGLET['J'] = ['      _', '     | |', '  _  | |', ' | |_| |', '  \\___/', ''];
++FIGLET['K'] = ['  _  __', ' | |/ /', " | ' /", ' | . \\', ' |_|\\_\\', ''];
++FIGLET['L'] = ['  _', ' | |', ' | |', ' | |___', ' |_____|', ''];
++FIGLET['M'] = ['  __  __', ' |  \\/  |', ' | |\\/| |', ' | |  | |', ' |_|  |_|', ''];
++FIGLET['N'] = ['  _   _', ' | \\ | |', ' |  \\| |', ' | |\\  |', ' |_| \\_|', ''];
++FIGLET['O'] = ['   ___', '  / _ \\', ' | | | |', ' | |_| |', '  \\___/', ''];
++FIGLET['P'] = ['  ____', ' |  _ \\', ' | |_) |', ' |  __/', ' |_|', ''];
++FIGLET['Q'] = ['   ___', '  / _ \\', ' | | | |', ' | |_| |', '  \\__\\_\\', ''];
++FIGLET['R'] = ['  ____', ' |  _ \\', ' | |_) |', ' |  _ <', ' |_| \\_\\', ''];
++FIGLET['S'] = ['  ____', ' / ___|', ' \\___ \\', '  ___) |', ' |____/', ''];
++FIGLET['T'] = ['  _____', ' |_   _|', '   | |', '   | |', '   |_|', ''];
++FIGLET['U'] = ['  _   _', ' | | | |', ' | | | |', ' | |_| |', '  \\___/', ''];
++FIGLET['V'] = [' __     __', ' \\ \\   / /', '  \\ \\ / /', '   \\ V /', '    \\_/', ''];
++FIGLET['W'] = [' __        __', ' \\ \\      / /', '  \\ \\ /\\ / /', '   \\ V  V /', '    \\_/\\_/', ''];
++FIGLET['X'] = [' __  __', ' \\ \\/ /', '  \\  /', '  /  \\', ' /_/\\_\\', ''];
++FIGLET['Y'] = [' __   __', ' \\ \\ / /', '  \\ V /', '   | |', '   |_|', ''];
++FIGLET['Z'] = ['  _____', ' |__  /', '   / /', '  / /_', ' /____|', ''];
++FIGLET['0'] = ['   ___', '  / _ \\', ' | | | |', ' | |_| |', '  \\___/', ''];
++FIGLET['1'] = ['  _', ' / |', ' | |', ' | |', ' |_|', ''];
++FIGLET['2'] = ['  ____', ' |___ \\', '   __) |', '  / __/', ' |_____|', ''];
++FIGLET['3'] = ['  _____', ' |___ /', '   |_ \\', '  ___) |', ' |____/', ''];
++FIGLET['4'] = ['  _  _', ' | || |', ' | || |_', ' |__   _|', '    |_|', ''];
++FIGLET['5'] = ['  ____', ' | ___|', ' |___ \\', '  ___) |', ' |____/', ''];
++FIGLET['6'] = ['   __', '  / /_', " | '_ \\", ' | (_) |', '  \\___/', ''];
++FIGLET['7'] = ['  _____', ' |___  |', '    / /', '   / /', '  /_/', ''];
++FIGLET['8'] = ['   ___', '  ( _ )', '  / _ \\', ' | (_) |', '  \\___/', ''];
++FIGLET['9'] = ['   ___', '  / _ \\', ' | (_) |', '  \\__, |', '    /_/', ''];
++FIGLET['-'] = ['', '', '  _____', ' |_____|', '', ''];
++FIGLET['_'] = ['', '', '', '', '  _____', ' |_____|'];
++FIGLET['.'] = ['', '', '', '  _', ' (_)', ''];
++FIGLET['!'] = ['  _', ' | |', ' | |', ' |_|', ' (_)', ''];
++FIGLET[' '] = ['', '', '', '', '', ''];
++
++const glyphFor = (ch: string): FigletGlyph =>
++  FIGLET[ch] ?? FIGLET['?'] ?? ['  ', '  ', '  ', '  ', '  ', '  '];
++
++/** Render text as big FIGlet rows (already uppercased by the caller).
++ *  Trailing all-blank rows are dropped so names without descenders stay tight. */
++export const renderFiglet = (text: string): string[] => {
++  const rows: string[] = ['', '', '', '', '', ''];
++
++  for (const ch of text) {
++    const g = glyphFor(ch);
++
++    for (let i = 0; i < 6; i++) {
++      rows[i] += (rows[i] ? ' ' : '') + g[i];
++    }
++  }
++
++  while (rows.length > 1 && !rows[rows.length - 1].trim()) {
++    rows.pop();
++  }
++
++  return rows.map(r => r.replace(/ +$/, ''));
++};
 diff --git a/ui-tui/src/components/messageLine.tsx b/ui-tui/src/components/messageLine.tsx
 index 135448153f..ec75df72bb 100644
 --- a/ui-tui/src/components/messageLine.tsx
@@ -885,10 +1229,10 @@ index 135448153f..ec75df72bb 100644
    detailsMode?: DetailsMode
 diff --git a/ui-tui/src/components/opencode.tsx b/ui-tui/src/components/opencode.tsx
 new file mode 100644
-index 0000000000..141dfd5b4c
+index 0000000000..1423e02f0e
 --- /dev/null
 +++ b/ui-tui/src/components/opencode.tsx
-@@ -0,0 +1,317 @@
+@@ -0,0 +1,320 @@
 +import { Box, Text } from '@hermes/ink'
 +import { compactNumber } from '@hermes/shared/format'
 +import type { Usage } from '@hermes/shared/gateway-events'
@@ -902,6 +1246,7 @@ index 0000000000..141dfd5b4c
 +import type { SessionInfo } from '../types.js'
 +
 +import { effortLabel } from './appChrome.js'
++import { renderFiglet } from './figletFont.js'
 +
 +// openhermes Fase 2: opencode-style surfaces for the Ink TUI, rendered only
 +// when `display.layout` is "opencode". Classic look is untouched.
@@ -917,15 +1262,17 @@ index 0000000000..141dfd5b4c
 +  const custom = (name ?? '').trim()
 +
 +  // Custom home-screen name (preview parity): anything but empty/"hermes"
-+  // renders big in spaced capitals instead of the block logo.
++  // renders big in FIGlet letters instead of the block logo.
 +  if (custom && custom.toLowerCase() !== 'hermes') {
-+    const spaced = custom.toUpperCase().slice(0, 24).split('').join(' ')
++    const lines = renderFiglet(custom.toUpperCase().slice(0, 24))
 +
 +    return (
-+      <Box alignItems="center" flexDirection="column" paddingY={2}>
-+        <Text bold color={t.color.text}>
-+          {spaced}
-+        </Text>
++      <Box alignItems="center" flexDirection="column" paddingY={1}>
++        {lines.map((line, i) => (
++          <Text color={t.color.text} key={i}>
++            {line}
++          </Text>
++        ))}
 +      </Box>
 +    )
 +  }
@@ -1208,19 +1555,23 @@ index 0000000000..141dfd5b4c
 +})
 diff --git a/ui-tui/src/components/opencodePalette.tsx b/ui-tui/src/components/opencodePalette.tsx
 new file mode 100644
-index 0000000000..8cd8cf7fff
+index 0000000000..b31aa88a33
 --- /dev/null
 +++ b/ui-tui/src/components/opencodePalette.tsx
-@@ -0,0 +1,481 @@
+@@ -0,0 +1,520 @@
 +import { Box, Text, useInput } from '@hermes/ink'
 +import { useStore } from '@nanostores/react'
 +import { memo, useCallback, useEffect, useRef, useState } from 'react'
 +
++import { applySkin } from '../app/createGatewayEventHandler.js'
 +import { useGateway } from '../app/gatewayContext.js'
 +import { patchOverlayState } from '../app/overlayStore.js'
 +import { $uiState, patchUiState } from '../app/uiStore.js'
++import type { GatewaySkin } from '../gatewayTypes.js'
 +import { detectLightMode } from '../theme.js'
 +import type { Theme } from '../theme.js'
++
++import { windowOffset } from './overlayControls.js'
 +
 +// openhermes Fase 3: Ctrl+P command palette. Views: commands, settings,
 +// themes. Models/sessions reuse the existing pickers. Name (skin branding)
@@ -1285,7 +1636,8 @@ index 0000000000..8cd8cf7fff
 +  t
 +}: OpencodePaletteProps) {
 +  const { rpc } = useGateway()
-+  const uiLayout = useStore($uiState).layout
++  const uiState = useStore($uiState)
++  const uiLayout = uiState.layout
 +  const [view, setView] = useState<View>('commands')
 +  const [filter, setFilter] = useState('')
 +  const [activeIdx, setActiveIdx] = useState(0)
@@ -1336,16 +1688,20 @@ index 0000000000..8cd8cf7fff
 +        ])
 +
 +        const skin = String(s?.value ?? '')
-+        setCurrentSkin(skin)
 +        setValues(prev => ({ ...prev, theme: String(m?.value ?? '') }))
-+        // Snapshot for Esc-revert + highlight where you are (preview parity).
-+        entrySkinRef.current = skin
-+        const name = themeNameFromSkin(skin)
++        // Effective skin: the TUI override wins over the shared skin.
++        // The entry override ('...' or '') is what Esc restores (preview parity).
++        const effective = uiState.tuiSkinName || skin
++        setCurrentSkin(effective)
++        entrySkinRef.current = uiState.tuiSkinName
++        const name = themeNameFromSkin(effective)
 +        setActiveIdx(name ? Math.max(0, THEME_NAMES.indexOf(name)) : 0)
 +      } catch {
 +        setCurrentSkin('')
 +      }
 +    })()
++     
++    // eslint-disable-next-line react-hooks/exhaustive-deps -- entry snapshot only
 +  }, [rpc, view])
 +
 +  const setConfig = useCallback((key: string, value: string, local?: Record<string, string>) => {
@@ -1366,11 +1722,28 @@ index 0000000000..8cd8cf7fff
 +  const colorMode = values['theme'] || 'auto'
 +  const skinFor = (name: string) => resolveSkin(name, colorMode)
 +
-+  const applyTheme = (name: string) => {
-+    const skin = skinFor(name)
++  // openhermes: themes apply to display.tui_skin (TUI-only) and resolve
++  // instantly — display.skin (Hermes Desktop) is never touched.
++  const applyTuiSkin = useCallback((skin: string) => {
 +    setCurrentSkin(skin)
-+    setConfig('skin', skin)
-+  }
++    setConfig('tui_skin', skin)
++    patchUiState({ tuiSkinName: skin })
++
++    void (async () => {
++      try {
++        const r = (await rpc('skin.resolve_tui', {})) as GatewaySkin | null
++
++        if (r && typeof r === 'object' && typeof r.name === 'string') {
++          applySkin(r)
++          setCurrentSkin(r.name || skin)
++        }
++      } catch (e) {
++        setErr(e instanceof Error ? e.message : String(e))
++      }
++    })()
++  }, [rpc, setConfig])
++
++  const applyTheme = (name: string) => applyTuiSkin(skinFor(name))
 +
 +  const cycleColorMode = () => {
 +    const next = COLOR_MODES[(COLOR_MODES.indexOf(colorMode) + 1) % COLOR_MODES.length] ?? 'auto'
@@ -1379,9 +1752,7 @@ index 0000000000..8cd8cf7fff
 +    const name = themeNameFromSkin(currentSkin)
 +
 +    if (name) {
-+      const skin = resolveSkin(name, next)
-+      setCurrentSkin(skin)
-+      setConfig('skin', skin)
++      applyTuiSkin(resolveSkin(name, next))
 +    }
 +  }
 +
@@ -1459,7 +1830,7 @@ index 0000000000..8cd8cf7fff
 +      {
 +        group: 'Appearance',
 +        items: [
-+          { label: 'Theme', run: () => go('themes'), value: values['skin'] || currentSkin },
++          { label: 'Theme', run: () => go('themes'), value: uiState.tuiSkinName || values['skin'] || currentSkin },
 +          {
 +            label: 'Name',
 +            run: () => go('name'),
@@ -1534,10 +1905,9 @@ index 0000000000..8cd8cf7fff
 +
 +  useEffect(() => {
 +    if (previewSkin && previewSkin !== currentSkin) {
-+      setCurrentSkin(previewSkin)
-+      setConfig('skin', previewSkin)
++      applyTuiSkin(previewSkin)
 +    }
-+  }, [currentSkin, previewSkin, setConfig])
++  }, [applyTuiSkin, currentSkin, previewSkin, setConfig])
 +
 +  useInput((ch, key) => {
 +    // openhermes: the name view owns every keystroke (preview parity:
@@ -1592,12 +1962,12 @@ index 0000000000..8cd8cf7fff
 +
 +    if (key.escape) {
 +      if (view === 'themes') {
-+        // Revert the hover preview to the entry skin (preview parity).
++        // Revert the hover preview to the entry override (preview parity).
++        // An empty entry clears the override: the shared skin takes over.
 +        const entry = entrySkinRef.current
 +
-+        if (entry) {
-+          setCurrentSkin(entry)
-+          setConfig('skin', entry)
++        if (entry !== currentSkin) {
++          applyTuiSkin(entry)
 +        }
 +
 +        go('commands')
@@ -1624,6 +1994,17 @@ index 0000000000..8cd8cf7fff
 +  })
 +
 +  let n = 0
++  // openhermes: the 33-theme list windows around the selection so the
++  // current theme is visible on open (the list always starts there).
++  const THEME_WINDOW = 12
++
++  const themeNames =
++    view === 'themes' ? THEME_NAMES.filter(tn => tn.includes(filter.toLowerCase())) : []
++
++  const themeOffset =
++    view === 'themes' && themeNames.length
++      ? windowOffset(themeNames.length, Math.min(activeIdx, themeNames.length - 1), THEME_WINDOW)
++      : 0
 +
 +  const title =
 +    view === 'commands' ? 'Commands' : view === 'settings' ? 'Settings' : view === 'name' ? 'Name' : 'Themes'
@@ -1666,6 +2047,11 @@ index 0000000000..8cd8cf7fff
 +          {g.items.map(r => {
 +            const idx = n
 +            n += 1
++
++            if (view === 'themes' && (idx < themeOffset || idx >= themeOffset + THEME_WINDOW)) {
++              return null
++            }
++
 +            const selected = idx === clamped
 +
 +            return (
@@ -1694,19 +2080,21 @@ index 0000000000..8cd8cf7fff
 +  patchOverlayState({ opencodePalette: true })
 +}
 diff --git a/ui-tui/src/gatewayTypes.ts b/ui-tui/src/gatewayTypes.ts
-index e82e83a4f2..bdb2057332 100644
+index e82e83a4f2..ecab15dc03 100644
 --- a/ui-tui/src/gatewayTypes.ts
 +++ b/ui-tui/src/gatewayTypes.ts
-@@ -73,6 +73,8 @@ export type {
+@@ -73,6 +73,10 @@ export type {
  // ── Config ───────────────────────────────────────────────────────────
  
  export interface ConfigDisplayConfig {
 +  /** openhermes: custom home-screen name (display.agent_name, max 24 chars). */
 +  agent_name?: string
++  /** openhermes: TUI-only skin override (display.tui_skin, empty = follow display.skin). */
++  tui_skin?: string
    battery?: boolean
    bell_on_complete?: boolean
    bell_on_prompt?: boolean
-@@ -81,6 +83,9 @@ export interface ConfigDisplayConfig {
+@@ -81,6 +85,9 @@ export interface ConfigDisplayConfig {
    /** Focus view (/focus) — display-only reduced-output mode. */
    focus_view?: boolean
    inline_diffs?: boolean
