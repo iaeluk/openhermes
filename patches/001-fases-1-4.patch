@@ -1,5 +1,5 @@
 diff --git a/hermes_cli/config_defaults.py b/hermes_cli/config_defaults.py
-index 76b6fbd23a..c864faeefd 100644
+index 76b6fbd23a..8aaf52653a 100644
 --- a/hermes_cli/config_defaults.py
 +++ b/hermes_cli/config_defaults.py
 @@ -838,6 +838,9 @@ DEFAULT_CONFIG = {
@@ -12,20 +12,30 @@ index 76b6fbd23a..c864faeefd 100644
          # Native TUI uses the terminal's primary buffer and scrollback instead of the custom
          # alternate-screen viewport. Flags win: `--native` / `--tui-native` and `--cli`.
          "tui_native": False,
+@@ -897,6 +900,8 @@ DEFAULT_CONFIG = {
+         "focus_view": False,
+         "focus_saved_tool_progress": "all",
+         "skin": "default",
++        # openhermes: custom TUI home-screen name (empty/Hermes = block logo).
++        "agent_name": "",
+         # UI language for static messages (approval prompts, some gateway slash replies); not agent
+         # responses/logs/tool outputs. en, zh, ja, de, es, fr, tr, uk; unknown → en.
+         "language": "en",
 diff --git a/tui_gateway/methods_config.py b/tui_gateway/methods_config.py
-index 312c032206..2d3dbd9c7b 100644
+index 312c032206..07bca15cb0 100644
 --- a/tui_gateway/methods_config.py
 +++ b/tui_gateway/methods_config.py
-@@ -276,6 +276,7 @@ _CONFIG_GETTERS = {
+@@ -276,6 +276,8 @@ _CONFIG_GETTERS = {
      "thinking_mode": _cfg_get_thinking_mode,
      "density": lambda params: {"value": "on" if bool(_display_raw().get("tui_compact", False)) else "off"},
      "theme": lambda params: {"value": _display_word("tui_theme", "auto", {"auto", "light", "dark"})},
 +    "layout": lambda params: {"value": _display_word("layout", "classic", {"classic", "opencode"})},
++    "agent_name": lambda params: {"value": str(_display_raw().get("agent_name", "") or "")},
      "statusbar": lambda params: {"value": _coerce_statusbar(_display_cfg().get("tui_statusbar", "top"))},
      "focus": lambda params: {"value": "on" if bool(_display_cfg().get("focus_view", False)) else "off",
                               "tool_progress": _load_tool_progress_mode()},
 diff --git a/tui_gateway/methods_config_set.py b/tui_gateway/methods_config_set.py
-index d691c1d2a8..4f164a6129 100644
+index d691c1d2a8..3296014481 100644
 --- a/tui_gateway/methods_config_set.py
 +++ b/tui_gateway/methods_config_set.py
 @@ -368,6 +368,8 @@ def _word_setters() -> dict:
@@ -37,7 +47,21 @@ index d691c1d2a8..4f164a6129 100644
          # _raw_word: 0/False/[] keep their text so the error names what was sent.
          "indicator": (_raw_word, INDICATOR_STYLES, "unknown indicator: {raw!r}; pick one of " + "|".join(INDICATOR_STYLES),
                        lambda w: _write_config_key("display.tui_status_indicator", w)),
-@@ -489,7 +491,7 @@ _CONFIG_SETTERS = {
+@@ -475,6 +477,13 @@ def _set_skin(rid, params, key, value, session):
+     return _kv(rid, key, value)
+ 
+ 
++@_cfgset_guarded
++def _set_agent_name(rid, params, key, value, session):
++    name = str(value or "").strip()[:24]
++    _write_config_key("display.agent_name", name)
++    return _kv(rid, key, name)
++
++
+ def _set_display_toggle(rid, params, key, value, session):
+     on = _BOOL_WORDS.get(str(value).strip().lower())
+     if on is None:
+@@ -489,10 +498,10 @@ _CONFIG_SETTERS = {
      "model": _set_model, "fast": _set_fast, "busy": _set_busy, "verbose": _set_verbose, "focus": _set_focus,
      "approval_mode": _set_approval_mode, "approvals.mode": _set_word, "yolo": _set_yolo,
      "reasoning": _set_reasoning, "details_mode": _set_word, "thinking_mode": _set_word,
@@ -45,7 +69,11 @@ index d691c1d2a8..4f164a6129 100644
 +    "density": _set_toggle, "battery": _set_toggle, "theme": _set_word, "layout": _set_word,
      "statusbar": _set_toggle, "mouse": _set_toggle, "indicator": _set_word, "voice.voice_chat_mode": _set_word,
      "cwd": _set_cwd, "terminal.cwd": _set_cwd, "workdir": _set_cwd,
-     "prompt": _set_prompt, "personality": _set_personality, "skin": _set_skin}
+-    "prompt": _set_prompt, "personality": _set_personality, "skin": _set_skin}
++    "prompt": _set_prompt, "personality": _set_personality, "skin": _set_skin, "agent_name": _set_agent_name}
+ 
+ # Keys whose sessionless branch writes a different, wider scope than the session branch (config.yaml's
+ # agent.* for every surface, the process env every later child inherits). A non-empty session_id this
 diff --git a/ui-tui/src/__tests__/opencodePalette.test.ts b/ui-tui/src/__tests__/opencodePalette.test.ts
 new file mode 100644
 index 0000000000..3cb5137bcd
@@ -138,7 +166,7 @@ index 9529b20218..e5c462b182 100644
  describe('prepareSubmission', () => {
    it('keeps the collapsed paste for display and expands the model payload', () => {
 diff --git a/ui-tui/src/app/interfaces.ts b/ui-tui/src/app/interfaces.ts
-index b51aa8525d..1048b3dd74 100644
+index b51aa8525d..8f5b4f50be 100644
 --- a/ui-tui/src/app/interfaces.ts
 +++ b/ui-tui/src/app/interfaces.ts
 @@ -302,6 +302,7 @@ export interface OverlayState {
@@ -149,7 +177,7 @@ index b51aa8525d..1048b3dd74 100644
    pager: null | PagerState
    petPicker: boolean
    pluginsHub: boolean
-@@ -346,6 +347,13 @@ export interface UiState {
+@@ -346,6 +347,16 @@ export interface UiState {
    info: null | SessionInfo
    liveSessionCount: number
    inlineDiffs: boolean
@@ -160,6 +188,9 @@ index b51aa8525d..1048b3dd74 100644
 +  // PLAN submits as `/plan <prompt>`, YOLO also flips the per-session yolo
 +  // toggle on entry/exit. See shift+tab handling in useInputHandlers.
 +  agentMode: 'PLAN' | 'SMART' | 'YOLO'
++  // openhermes: custom home-screen name (opencode layout). Empty or
++  // "hermes" (any case) shows the block logo; anything else shows the name.
++  agentName: string
    mouseTracking: MouseTrackingMode
    notice: Notice | null
    pasteCollapseLines: number
@@ -200,7 +231,7 @@ index 0c3ea9d7d4..aa0342c371 100644
      pluginsHub: $overlayState.get().pluginsHub,
      sessions: $overlayState.get().sessions,
 diff --git a/ui-tui/src/app/uiStore.ts b/ui-tui/src/app/uiStore.ts
-index b29c0ecea1..3aa9566251 100644
+index b29c0ecea1..0559e55e0a 100644
 --- a/ui-tui/src/app/uiStore.ts
 +++ b/ui-tui/src/app/uiStore.ts
 @@ -1,3 +1,7 @@
@@ -211,7 +242,7 @@ index b29c0ecea1..3aa9566251 100644
  import { atom, computed } from 'nanostores'
  
  import { MOUSE_TRACKING } from '../config/env.js'
-@@ -8,6 +12,47 @@ import { DEFAULT_THEME } from '../theme.js'
+@@ -8,6 +12,85 @@ import { DEFAULT_THEME } from '../theme.js'
  
  import { DEFAULT_INDICATOR_STYLE, type UiState } from './interfaces.js'
  
@@ -256,23 +287,70 @@ index b29c0ecea1..3aa9566251 100644
 +  return 'classic'
 +}
 +
++// openhermes: custom home-screen name at boot (display.agent_name, max 24).
++const readBootAgentName = (): string => {
++  if (process.env.VITEST) {
++    return ''
++  }
++
++  try {
++    const home = process.env.HERMES_HOME ?? join(homedir(), '.hermes')
++    const text = readFileSync(join(home, 'config.yaml'), 'utf8')
++    const lines = text.split('\n')
++    let inDisplay = false
++
++    for (const line of lines) {
++      if (/^display:\s*(#.*)?$/.test(line)) {
++        inDisplay = true
++
++        continue
++      }
++
++      if (inDisplay) {
++        if (/^\S/.test(line)) {
++          break
++        }
++
++        const m = /^\s+agent_name:\s*["']?(.{0,24})["']?\s*(#.*)?$/.exec(line)
++
++        if (m) {
++          return m[1].trim().slice(0, 24)
++        }
++      }
++    }
++  } catch {
++    // Unreadable config → empty default, gateway sync repairs it.
++  }
++
++  return ''
++}
++
  const buildUiState = (): UiState => ({
    battery: false,
    batteryStatus: null,
-@@ -24,6 +69,8 @@ const buildUiState = (): UiState => ({
+@@ -24,6 +107,9 @@ const buildUiState = (): UiState => ({
    info: null,
    liveSessionCount: 0,
    inlineDiffs: true,
 +  layout: readBootLayout(),
 +  agentMode: 'SMART',
++  agentName: readBootAgentName(),
    mouseTracking: MOUSE_TRACKING,
    notice: null,
    pasteCollapseLines: 5,
 diff --git a/ui-tui/src/app/useConfigSync.ts b/ui-tui/src/app/useConfigSync.ts
-index 7b6c422fe6..1ebdc57da5 100644
+index 7b6c422fe6..1e90e6f99a 100644
 --- a/ui-tui/src/app/useConfigSync.ts
 +++ b/ui-tui/src/app/useConfigSync.ts
-@@ -309,6 +309,7 @@ export const applyDisplay = (
+@@ -297,6 +297,7 @@ export const applyDisplay = (
+   }
+ 
+   patchUiState({
++    agentName: typeof d.agent_name === 'string' ? d.agent_name.slice(0, 24) : '',
+     battery: !!d.battery,
+     busyInputMode: normalizeBusyInputMode(d.busy_input_mode),
+     compact: !!d.tui_compact,
+@@ -309,6 +310,7 @@ export const applyDisplay = (
      focusView: !!d.focus_view,
      indicatorStyle: normalizeIndicatorStyle(d.tui_status_indicator),
      inlineDiffs: d.inline_diffs !== false,
@@ -378,7 +456,7 @@ index 073a6db67b..46b9a0eda1 100644
      [appendMessage, composerActions, composerRefs, composerState, dispatchSubmission, gw, sys]
    )
 diff --git a/ui-tui/src/components/appLayout.tsx b/ui-tui/src/components/appLayout.tsx
-index 2808ae5ccd..e7810032ee 100644
+index 2808ae5ccd..ac0b69f557 100644
 --- a/ui-tui/src/components/appLayout.tsx
 +++ b/ui-tui/src/components/appLayout.tsx
 @@ -36,6 +36,7 @@ import { GoalBar } from './goalBar.js'
@@ -403,7 +481,7 @@ index 2808ae5ccd..e7810032ee 100644
            {row.msg.kind === 'intro' ? (
 -            nativeMode ? null : (
 +            nativeMode ? null : ui.layout === 'opencode' ? (
-+              <OpencodeIntro t={ui.theme} />
++              <OpencodeIntro name={ui.agentName} t={ui.theme} />
 +            ) : (
                <Box flexDirection="column" paddingTop={1}>
                  <Banner maxWidth={Math.max(1, composer.cols - 2)} t={ui.theme} />
@@ -501,7 +579,7 @@ index 2808ae5ccd..e7810032ee 100644
    }
  
    const endInputDrag = () => inputMouseRef.current?.end()
-@@ -422,21 +459,33 @@ const ComposerPane = memo(function ComposerPane({
+@@ -422,21 +459,34 @@ const ComposerPane = memo(function ComposerPane({
          marginTop={nativeMode || ui.statusBar === 'top' ? 0 : 1}
          position={nativeMode ? undefined : 'relative'}
        >
@@ -523,6 +601,7 @@ index 2808ae5ccd..e7810032ee 100644
 +              : {})}
 +            flexDirection="column"
 +            paddingX={oc ? 1 : 0}
++            paddingY={oc ? 1 : 0}
 +          >
              {composer.inputBuf.map((line, i) => (
                <Box key={i}>
@@ -545,7 +624,7 @@ index 2808ae5ccd..e7810032ee 100644
  
                  <Text color={ui.theme.color.text}>{line || ' '}</Text>
                </Box>
-@@ -447,17 +496,19 @@ const ComposerPane = memo(function ComposerPane({
+@@ -447,17 +497,19 @@ const ComposerPane = memo(function ComposerPane({
                onMouseDrag={dragFromPromptRow}
                onMouseUp={endInputDrag}
                position="relative"
@@ -575,7 +654,7 @@ index 2808ae5ccd..e7810032ee 100644
  
                <Box flexGrow={0} flexShrink={0} height={inputHeight} width={inputColumns}>
                  {/* Reserve the transcript scrollbar gutter too so typing never rewraps when the scrollbar column repaints. */}
-@@ -470,7 +521,12 @@ const ComposerPane = memo(function ComposerPane({
+@@ -470,7 +522,12 @@ const ComposerPane = memo(function ComposerPane({
                    onChange={composer.updateInput}
                    onPaste={composer.handleTextPaste}
                    onSubmit={composer.submit}
@@ -589,7 +668,7 @@ index 2808ae5ccd..e7810032ee 100644
                    // Exactly the "(and N more toolsets…)" tone. `muted` is a
                    // MID-luminance family tone, so it reads receded on both
                    // poles even when polarity detection is wrong (transparent
-@@ -486,8 +542,20 @@ const ComposerPane = memo(function ComposerPane({
+@@ -486,8 +543,20 @@ const ComposerPane = memo(function ComposerPane({
                  <GoodVibesHeart t={ui.theme} tick={status.goodVibesTick} />
                </Box>
              </Box>
@@ -611,7 +690,7 @@ index 2808ae5ccd..e7810032ee 100644
        </Box>
  
        {nativeMode && <FloatingOverlays {...floatingOverlayProps} nativeMode />}
-@@ -532,6 +600,11 @@ const StatusRulePane = memo(function StatusRulePane({
+@@ -532,6 +601,11 @@ const StatusRulePane = memo(function StatusRulePane({
  }: Pick<AppLayoutProps, 'composer' | 'status'> & { at: 'bottom' | 'top'; nativeMode: boolean }) {
    const ui = useStore($uiState)
  
@@ -623,7 +702,7 @@ index 2808ae5ccd..e7810032ee 100644
    if (ui.statusBar === 'off' || (nativeMode ? at !== 'top' : ui.statusBar !== at)) {
      return null
    }
-@@ -591,9 +664,39 @@ export const AppLayout = memo(function AppLayout({
+@@ -591,9 +665,39 @@ export const AppLayout = memo(function AppLayout({
    const Shell = INLINE_MODE ? Fragment : AlternateScreen
    const shellProps = INLINE_MODE ? {} : { mouseTracking }
  
@@ -631,7 +710,7 @@ index 2808ae5ccd..e7810032ee 100644
 +  // block (exactly like the preview). After the first user message the
 +  // classic docked composer takes over at the bottom.
 +  const freshOC = ui.layout === 'opencode' && !transcript.historyItems.some(m => m.role === 'user')
-+  const welcomeWidth = Math.min(71, Math.max(20, composer.cols - 4))
++  const welcomeWidth = Math.min(80, Math.max(20, composer.cols - 4))
 +
    return (
      <Shell {...shellProps}>
@@ -647,7 +726,7 @@ index 2808ae5ccd..e7810032ee 100644
 +        )}
 +        {freshOC && !overlay.agents && !overlay.journey ? (
 +          <Box alignItems="center" flexDirection="column" flexGrow={1} justifyContent="center">
-+            <OpencodeIntro t={ui.theme} />
++            <OpencodeIntro name={ui.agentName} t={ui.theme} />
 +            <Box flexDirection="column" width={welcomeWidth}>
 +              <ComposerPane
 +                actions={actions}
@@ -663,7 +742,7 @@ index 2808ae5ccd..e7810032ee 100644
          <Box flexDirection="row" flexGrow={1}>
            {!overlay.agents && !overlay.journey && <AmbientRail side="left" />}
            {overlay.agents ? (
-@@ -617,8 +720,9 @@ export const AppLayout = memo(function AppLayout({
+@@ -617,8 +721,9 @@ export const AppLayout = memo(function AppLayout({
            )}
            {!overlay.agents && !overlay.journey && <AmbientRail side="right" />}
          </Box>
@@ -674,7 +753,7 @@ index 2808ae5ccd..e7810032ee 100644
            <>
              <PerfPane id="prompt">
                <PromptZone
-@@ -652,6 +756,10 @@ export const AppLayout = memo(function AppLayout({
+@@ -652,6 +757,10 @@ export const AppLayout = memo(function AppLayout({
            </>
          )}
  
@@ -752,10 +831,10 @@ index 9de4c52c03..eeb9c1f90e 100644
  
 diff --git a/ui-tui/src/components/opencode.tsx b/ui-tui/src/components/opencode.tsx
 new file mode 100644
-index 0000000000..7c78b8dfcf
+index 0000000000..2e619fbf51
 --- /dev/null
 +++ b/ui-tui/src/components/opencode.tsx
-@@ -0,0 +1,295 @@
+@@ -0,0 +1,309 @@
 +import { Box, Text } from '@hermes/ink'
 +import { compactNumber } from '@hermes/shared/format'
 +import type { Usage } from '@hermes/shared/gateway-events'
@@ -778,9 +857,23 @@ index 0000000000..7c78b8dfcf
 +  '█  █ ▀▀▀▀ ▀  ▀ ▀  ▀ ▀▀▀▀ ▀▀▀▀'
 +]
 +
-+export const OpencodeIntro = memo(function OpencodeIntro({ t }: { t: Theme }) {
++export const OpencodeIntro = memo(function OpencodeIntro({ name, t }: { name?: string; t: Theme }) {
++  const custom = (name ?? '').trim()
++
++  // Custom home-screen name (preview parity): anything but empty/"hermes"
++  // renders as big uppercase text instead of the block logo.
++  if (custom && custom.toLowerCase() !== 'hermes') {
++    return (
++      <Box alignItems="center" flexDirection="column" paddingY={2}>
++        <Text bold color={t.color.text}>
++          {custom.toUpperCase().slice(0, 24)}
++        </Text>
++      </Box>
++    )
++  }
++
 +  return (
-+    <Box alignItems="center" flexDirection="column" paddingY={1}>
++    <Box alignItems="center" flexDirection="column" paddingY={2}>
 +      {BLOCK_LOGO.map((line, i) => (
 +        <Text color={t.color.text} key={i}>
 +          {line}
@@ -848,9 +941,9 @@ index 0000000000..7c78b8dfcf
 +// `~` on the left, shortcuts on the right.
 +export const OpencodeHints = memo(function OpencodeHints({ t }: { t: Theme }) {
 +  return (
-+    <Box flexDirection="row" justifyContent="space-between" paddingX={1}>
++    <Box flexDirection="row" justifyContent="space-between" marginTop={1} paddingX={1}>
 +      <Text color={t.color.muted}>~</Text>
-+      <Text color={t.color.muted}>
++      <Text color={t.color.muted} wrap="truncate-end">
 +        <Text color={t.color.text}>shift+tab</Text>
 +        {' agentes  '}
 +        <Text color={t.color.text}>ctrl+p</Text>
@@ -1053,17 +1146,17 @@ index 0000000000..7c78b8dfcf
 +})
 diff --git a/ui-tui/src/components/opencodePalette.tsx b/ui-tui/src/components/opencodePalette.tsx
 new file mode 100644
-index 0000000000..9a4058b089
+index 0000000000..c0526a3406
 --- /dev/null
 +++ b/ui-tui/src/components/opencodePalette.tsx
-@@ -0,0 +1,389 @@
+@@ -0,0 +1,480 @@
 +import { Box, Text, useInput } from '@hermes/ink'
 +import { useStore } from '@nanostores/react'
 +import { memo, useCallback, useEffect, useRef, useState } from 'react'
 +
 +import { useGateway } from '../app/gatewayContext.js'
 +import { patchOverlayState } from '../app/overlayStore.js'
-+import { $uiState } from '../app/uiStore.js'
++import { $uiState, patchUiState } from '../app/uiStore.js'
 +import { detectLightMode } from '../theme.js'
 +import type { Theme } from '../theme.js'
 +
@@ -1071,7 +1164,7 @@ index 0000000000..9a4058b089
 +// themes. Models/sessions reuse the existing pickers. Name (skin branding)
 +// needs a backend RPC first — see TODO in Fase 5 notes, not shipped here.
 +
-+type View = 'commands' | 'settings' | 'themes'
++type View = 'commands' | 'name' | 'settings' | 'themes'
 +
 +const THEME_NAMES = [
 +  'aura', 'ayu', 'carbonfox', 'catppuccin', 'catppuccin-frappe',
@@ -1135,6 +1228,9 @@ index 0000000000..9a4058b089
 +  const [filter, setFilter] = useState('')
 +  const [activeIdx, setActiveIdx] = useState(0)
 +  const [values, setValues] = useState<Record<string, string>>({})
++  // openhermes: home-screen name draft for the `name` view (preview parity:
++  // Enter confirms, Esc goes back). Null until loaded.
++  const [nameDraft, setNameDraft] = useState<string | null>(null)
 +  // openhermes: skin active when the themes view opened — Esc reverts to it,
 +  // exactly like the preview (prevTheme).
 +  const entrySkinRef = useRef('')
@@ -1148,7 +1244,7 @@ index 0000000000..9a4058b089
 +    void (async () => {
 +      const out: Record<string, string> = {}
 +
-+      for (const k of ['skin', 'reasoning', 'theme']) {
++      for (const k of ['skin', 'reasoning', 'theme', 'agent_name']) {
 +        try {
 +          const r = (await rpc('config.get', { key: k })) as {
 +            display?: unknown
@@ -1227,6 +1323,32 @@ index 0000000000..9a4058b089
 +    }
 +  }
 +
++  // openhermes: entering the name view loads the saved name as the draft
++  // (preview parity: empty when it is the default Hermes).
++  useEffect(() => {
++    if (view !== 'name') {
++      return
++    }
++    void (async () => {
++      try {
++        const r = (await rpc('config.get', { key: 'agent_name' })) as { value?: unknown } | null
++        const saved = String(r?.value ?? '')
++        setNameDraft(saved && saved.toLowerCase() !== 'hermes' ? saved : '')
++      } catch {
++        setNameDraft('')
++      }
++    })()
++  }, [rpc, view])
++
++  const saveName = () => {
++    const name = (nameDraft ?? '').trim().slice(0, 24)
++    setConfig('agent_name', name)
++    setValues(prev => ({ ...prev, agent_name: name }))
++    // Instant repaint; the config poll confirms it right after.
++    patchUiState({ agentName: name })
++    onCancel()
++  }
++
 +  const go = (v: View) => {
 +    setView(v)
 +    setFilter('')
@@ -1275,6 +1397,11 @@ index 0000000000..9a4058b089
 +        group: 'Appearance',
 +        items: [
 +          { label: 'Theme', run: () => go('themes'), value: values['skin'] || currentSkin },
++          {
++            label: 'Name',
++            run: () => go('name'),
++            value: values['agent_name'] || 'Hermes'
++          },
 +          {
 +            label: 'Color mode',
 +            run: cycleColorMode,
@@ -1350,6 +1477,38 @@ index 0000000000..9a4058b089
 +  }, [currentSkin, previewSkin, setConfig])
 +
 +  useInput((ch, key) => {
++    // openhermes: the name view owns every keystroke (preview parity:
++    // type, Enter confirms, Esc goes back to settings).
++    if (view === 'name') {
++      if (key.return) {
++        saveName()
++
++        return
++      }
++
++      if (key.escape) {
++        go('settings')
++
++        return
++      }
++
++      if (key.backspace || key.delete) {
++        setNameDraft(v => (v ?? '').slice(0, -1))
++
++        return
++      }
++
++      if (key.upArrow || key.downArrow || key.leftArrow || key.rightArrow || key.tab) {
++        return
++      }
++
++      if (ch && ch.length === 1 && !key.ctrl && !key.meta) {
++        setNameDraft(v => ((v ?? '') + ch).slice(0, 24))
++      }
++
++      return
++    }
++
 +    if (key.upArrow) {
 +      setActiveIdx(i => (i - 1 + flat.length) % Math.max(1, flat.length))
 +
@@ -1402,7 +1561,9 @@ index 0000000000..9a4058b089
 +  })
 +
 +  let n = 0
-+  const title = view === 'commands' ? 'Commands' : view === 'settings' ? 'Settings' : 'Themes'
++
++  const title =
++    view === 'commands' ? 'Commands' : view === 'settings' ? 'Settings' : view === 'name' ? 'Name' : 'Themes'
 +
 +  return (
 +    <Box flexDirection="column" width={60}>
@@ -1412,8 +1573,29 @@ index 0000000000..9a4058b089
 +        </Text>
 +        <Text color={t.color.muted}>esc</Text>
 +      </Box>
-+      <Text color={t.color.muted}>{filter || 'Search'}</Text>
-+      {visible.map(g => (
++      {view === 'name' ? (
++        <>
++          <Text bold color={t.color.accent}>
++            Nome na tela inicial (Enter confirma)
++          </Text>
++          <Box borderColor={t.color.border} borderStyle="single" marginTop={1} paddingX={1}>
++            {nameDraft ? (
++              <Text color={t.color.text}>
++                {nameDraft}
++                <Text inverse> </Text>
++              </Text>
++            ) : (
++              <Text color={t.color.muted}>
++                Exemplo: Jarvis
++                <Text inverse> </Text>
++              </Text>
++            )}
++          </Box>
++        </>
++      ) : (
++        <>
++          <Text color={t.color.muted}>{filter || 'Search'}</Text>
++          {visible.map(g => (
 +        <Box flexDirection="column" key={g.group}>
 +          <Text bold color={t.color.accent}>
 +            {g.group}
@@ -1438,6 +1620,8 @@ index 0000000000..9a4058b089
 +          })}
 +        </Box>
 +      ))}
++        </>
++      )}
 +      {err ? <Text color={t.color.error}>{err}</Text> : null}
 +    </Box>
 +  )
@@ -1447,10 +1631,19 @@ index 0000000000..9a4058b089
 +  patchOverlayState({ opencodePalette: true })
 +}
 diff --git a/ui-tui/src/gatewayTypes.ts b/ui-tui/src/gatewayTypes.ts
-index e82e83a4f2..4b101f537f 100644
+index e82e83a4f2..bdb2057332 100644
 --- a/ui-tui/src/gatewayTypes.ts
 +++ b/ui-tui/src/gatewayTypes.ts
-@@ -81,6 +81,9 @@ export interface ConfigDisplayConfig {
+@@ -73,6 +73,8 @@ export type {
+ // ── Config ───────────────────────────────────────────────────────────
+ 
+ export interface ConfigDisplayConfig {
++  /** openhermes: custom home-screen name (display.agent_name, max 24 chars). */
++  agent_name?: string
+   battery?: boolean
+   bell_on_complete?: boolean
+   bell_on_prompt?: boolean
+@@ -81,6 +83,9 @@ export interface ConfigDisplayConfig {
    /** Focus view (/focus) — display-only reduced-output mode. */
    focus_view?: boolean
    inline_diffs?: boolean
