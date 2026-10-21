@@ -1202,10 +1202,10 @@ index 0000000000..3f8e82a00e
 +})
 diff --git a/ui-tui/src/components/opencodePalette.tsx b/ui-tui/src/components/opencodePalette.tsx
 new file mode 100644
-index 0000000000..c0526a3406
+index 0000000000..b60ea2c78b
 --- /dev/null
 +++ b/ui-tui/src/components/opencodePalette.tsx
-@@ -0,0 +1,480 @@
+@@ -0,0 +1,481 @@
 +import { Box, Text, useInput } from '@hermes/ink'
 +import { useStore } from '@nanostores/react'
 +import { memo, useCallback, useEffect, useRef, useState } from 'react'
@@ -1443,7 +1443,8 @@ index 0000000000..c0526a3406
 +        group: 'Appearance',
 +        items: [
 +          { label: 'Switch theme', run: () => go('themes') },
-+          { label: 'Color mode', run: cycleColorMode }
++          { label: 'Color mode', run: cycleColorMode },
++          { label: 'Mudar nome', run: () => go('name') }
 +        ]
 +      }
 +    )
