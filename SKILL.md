@@ -7,6 +7,10 @@ license: MIT
 
 # openhermes build
 
+> Caminho rápido primeiro: se o checkout é o Hermes 0.22.2 (`d923a5eb48`),
+> rode `scripts/apply.sh` e pule para a Verificação final. As fases abaixo
+> são para checkouts onde o patch não aplica.
+
 Construa o layout openhermes no Hermes Ink TUI em fases, com aprovação do Lucas entre elas. Escopo: só o Ink TUI (`hermes --tui`), opt-in via `display.layout: opencode`. O CLI clássico não muda.
 
 ## Antes de começar
