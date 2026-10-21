@@ -61,6 +61,9 @@ These come from the person's own setup at runtime — the port only reads them, 
 - slash commands, models, sessions/tabs, skills, plugins, MCP servers;
 - tool counts and usage numbers in the footer;
 - the person's own skins (untouched; the TUI theme lives in `display.tui_skin`, the desktop keeps `display.skin`).
+- Termux via proot-distro: auto-detect fails inside the distro, so set `HERMES_TUI_TERMUX_MODE=1`
+  in the distro shell (`export HERMES_TUI_TERMUX_MODE=1` in `~/.bashrc`). That turns mouse tracking
+  off, so tapping the text field opens the keyboard.
 
 ## Build from scratch (alternative)
 
