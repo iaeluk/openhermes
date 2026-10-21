@@ -12,6 +12,41 @@ index 76b6fbd23a..c864faeefd 100644
          # Native TUI uses the terminal's primary buffer and scrollback instead of the custom
          # alternate-screen viewport. Flags win: `--native` / `--tui-native` and `--cli`.
          "tui_native": False,
+diff --git a/ui-tui/src/__tests__/opencodePalette.test.ts b/ui-tui/src/__tests__/opencodePalette.test.ts
+new file mode 100644
+index 0000000000..3cb5137bcd
+--- /dev/null
++++ b/ui-tui/src/__tests__/opencodePalette.test.ts
+@@ -0,0 +1,29 @@
++import { describe, expect, it } from 'vitest'
++
++import { resolveSkin, themeNameFromSkin } from '../components/opencodePalette.js'
++
++describe('themeNameFromSkin', () => {
++  it('strips the oh- prefix and -light suffix', () => {
++    expect(themeNameFromSkin('oh-dracula')).toBe('dracula')
++    expect(themeNameFromSkin('oh-dracula-light')).toBe('dracula')
++    expect(themeNameFromSkin('oh-cobalt2')).toBe('cobalt2')
++  })
++
++  it('returns null for non-openhermes skins', () => {
++    expect(themeNameFromSkin('omarchy')).toBe(null)
++    expect(themeNameFromSkin('default')).toBe(null)
++    expect(themeNameFromSkin('')).toBe(null)
++  })
++})
++
++describe('resolveSkin', () => {
++  it('honors an explicit light/dark color mode', () => {
++    expect(resolveSkin('dracula', 'light')).toBe('oh-dracula-light')
++    expect(resolveSkin('dracula', 'dark')).toBe('oh-dracula')
++  })
++
++  it('resolves auto through terminal detection (boolean either way)', () => {
++    expect(['oh-dracula', 'oh-dracula-light']).toContain(resolveSkin('dracula', 'auto'))
++    expect(['oh-nord', 'oh-nord-light']).toContain(resolveSkin('nord', ''))
++  })
++})
 diff --git a/ui-tui/src/__tests__/useConfigSync.test.ts b/ui-tui/src/__tests__/useConfigSync.test.ts
 index 79c38f0749..25cbe15162 100644
 --- a/ui-tui/src/__tests__/useConfigSync.test.ts
@@ -405,31 +440,38 @@ index 9de4c52c03..3435b11796 100644
  
 diff --git a/ui-tui/src/components/opencode.tsx b/ui-tui/src/components/opencode.tsx
 new file mode 100644
-index 0000000000..eb47fe23f2
+index 0000000000..baaa7abc1c
 --- /dev/null
 +++ b/ui-tui/src/components/opencode.tsx
-@@ -0,0 +1,153 @@
+@@ -0,0 +1,295 @@
 +import { Box, Text } from '@hermes/ink'
++import { compactNumber } from '@hermes/shared/format'
++import type { Usage } from '@hermes/shared/gateway-events'
 +import { useStore } from '@nanostores/react'
 +import { memo, type ReactNode, useCallback, useEffect, useState } from 'react'
 +
 +import { useGateway } from '../app/gatewayContext.js'
 +import { $uiSessionId } from '../app/uiStore.js'
-+import { logo } from '../banner.js'
 +import type { SessionActiveItem, SessionActiveListResponse } from '../gatewayTypes.js'
 +import type { Theme } from '../theme.js'
++import type { SessionInfo } from '../types.js'
 +
 +// openhermes Fase 2: opencode-style surfaces for the Ink TUI, rendered only
 +// when `display.layout` is "opencode". Classic look is untouched.
 +
-+export const OpencodeIntro = memo(function OpencodeIntro({ t }: { t: Theme }) {
-+  const lines = logo(t.color, t.bannerLogo || undefined)
++// Exact block logo from the approved preview.
++const BLOCK_LOGO = [
++  '█  █ █▀▀▀ █▀▀█ █▄ ▄█ █▀▀▀ █▀▀▀',
++  '████ █▀▀  █▀▀▀ █ ▀█ █▀▀  ▀▀▀█',
++  '█  █ ▀▀▀▀ ▀  ▀ ▀  ▀ ▀▀▀▀ ▀▀▀▀'
++]
 +
++export const OpencodeIntro = memo(function OpencodeIntro({ t }: { t: Theme }) {
 +  return (
 +    <Box alignItems="center" flexDirection="column" paddingY={1}>
-+      {lines.map(([color, text], i) => (
-+        <Text color={color || t.color.text} key={i}>
-+          {text}
++      {BLOCK_LOGO.map((line, i) => (
++        <Text color={t.color.text} key={i}>
++          {line}
 +        </Text>
 +      ))}
 +    </Box>
@@ -461,24 +503,130 @@ index 0000000000..eb47fe23f2
 +export const OpencodeModelLine = memo(function OpencodeModelLine({
 +  agent,
 +  model,
-+  t
++  provider,
++  t,
++  tier
 +}: {
 +  agent: string
 +  model: string
++  provider?: string
 +  t: Theme
++  tier?: string
 +}) {
 +  if (!model) {
 +    return null
 +  }
 +
++  const where = [model, provider].filter(Boolean).join(' ')
++
 +  return (
 +    <Box paddingX={1}>
-+      <Text color={t.color.muted}>
++      <Text color={t.color.muted} wrap="truncate-end">
 +        <Text bold color={t.color.accent}>
 +          {agent}
 +        </Text>
-+        {' · '}
-+        {model}
++        {` · ${where}`}
++        {tier ? ` · ${tier}` : ''}
++      </Text>
++    </Box>
++  )
++})
++
++// Hints row under the composer, exactly like the preview:
++// `~` on the left, shortcuts on the right.
++export const OpencodeHints = memo(function OpencodeHints({ t }: { t: Theme }) {
++  return (
++    <Box flexDirection="row" justifyContent="space-between" paddingX={1}>
++      <Text color={t.color.muted}>~</Text>
++      <Text color={t.color.muted}>
++        <Text color={t.color.text}>shift+tab</Text>
++        {' agentes  '}
++        <Text color={t.color.text}>ctrl+p</Text>
++        {' comandos'}
++      </Text>
++    </Box>
++  )
++})
++
++const countEntries = (rec?: Record<string, string[]> | null): number =>
++  rec ? Object.values(rec).reduce((n, arr) => n + (arr?.length ?? 0), 0) : 0
++
++export const OpencodeStatusBar = memo(function OpencodeStatusBar({
++  fresh,
++  info,
++  t,
++  usage
++}: {
++  fresh: boolean
++  info?: SessionInfo | null
++  t: Theme
++  usage?: Usage | null
++}) {
++  if (fresh) {
++    const tools = countEntries(info?.tools)
++    const skills = countEntries(info?.skills)
++
++    return (
++      <Box flexDirection="row" justifyContent="space-between" paddingX={1}>
++        <Text color={t.color.muted} wrap="truncate-end">
++          {`⊙ ${tools} ferramentas · ${skills} skills`}
++        </Text>
++        <Text color={t.color.muted}>{info?.version ?? ''}</Text>
++      </Box>
++    )
++  }
++
++  const used = usage?.context_used ?? 0
++  const pct = usage?.context_percent ?? 0
++
++  const cost = usage?.cost_usd ?? (typeof usage?.dev_credits_spent_micros === 'number'
++    ? usage.dev_credits_spent_micros / 1_000_000
++    : 0)
++
++  return (
++    <Box flexDirection="row" justifyContent="space-between" paddingX={1}>
++      <Text color={t.color.muted} wrap="truncate-end">
++        {`${compactNumber(used)} (${Math.round(pct)}%) · $${cost.toFixed(2)}`}
++      </Text>
++      <Text color={t.color.muted}>
++        <Text bold color={t.color.text}>ctrl+p</Text>
++        {' commands'}
++      </Text>
++    </Box>
++  )
++})
++
++// Per-answer meta line, like the preview:
++// `AGENT · model · 1.8s · 42.5 tok/s` (session averages, same numbers as status).
++export const OpencodeMeta = memo(function OpencodeMeta({
++  agent,
++  model,
++  t,
++  usage
++}: {
++  agent: string
++  model: string
++  t: Theme
++  usage?: Usage | null
++}) {
++  const parts = [agent, model]
++
++  if (typeof usage?.avg_latency_s === 'number') {
++    parts.push(`${usage.avg_latency_s.toFixed(1)}s`)
++  }
++
++  if (typeof usage?.avg_tps === 'number') {
++    parts.push(`${usage.avg_tps.toFixed(1)} tok/s`)
++  }
++
++  if (parts.length <= 2) {
++    return null
++  }
++
++  return (
++    <Box paddingX={1}>
++      <Text color={t.color.muted} wrap="truncate-end">
++        {parts.join(' · ')}
 +      </Text>
 +    </Box>
 +  )
@@ -525,6 +673,37 @@ index 0000000000..eb47fe23f2
 +    return () => clearInterval(id)
 +  }, [refresh])
 +
++  // openhermes: close mirrors ActiveSessionSwitcher — refresh now, and when
++  // the current session died adopt a fallback (another live tab, else a new
++  // session) so the TUI never sits on a dead session.
++  const handleClose = useCallback((id: string) => {
++    void (async () => {
++      try {
++        await onClose(id)
++      } catch {
++        // A failed close just leaves the tab; the refresh below repairs it.
++      }
++
++      try {
++        const list = await gw.request<SessionActiveListResponse>('session.active_list', {})
++        const rows = list?.sessions ?? []
++        setTabs(rows)
++
++        if (sid != null && id === sid) {
++          const next = rows.find(t => t.id !== id) ?? rows[0]
++
++          if (next) {
++            onSelect(next.id)
++          } else {
++            onNew()
++          }
++        }
++      } catch {
++        // Keep last-good list; the poll retries.
++      }
++    })()
++  }, [gw, onClose, onNew, onSelect, sid])
++
 +  if (tabs.length <= 1 && fresh) {
 +    return null
 +  }
@@ -536,19 +715,17 @@ index 0000000000..eb47fe23f2
 +        const title = (tab.title || tab.preview || tab.id).slice(0, TAB_TITLE_LEN)
 +
 +        return (
-+          <Box key={tab.id} onClick={() => onSelect(tab.id)}>
-+            <Text
-+              backgroundColor={active ? t.color.statusBg : undefined}
-+              bold={active}
-+              color={active ? t.color.text : t.color.muted}
-+            >
-+              {` ${title} `}
-+            </Text>
-+            <Box onClick={(e: { stopImmediatePropagation?: () => void }) => {
-+              e.stopImmediatePropagation?.()
-+              onClose(tab.id)
-+            }}
-+            >
++          <Box flexDirection="row" key={tab.id}>
++            <Box onClick={() => onSelect(tab.id)}>
++              <Text
++                backgroundColor={active ? t.color.statusBg : undefined}
++                bold={active}
++                color={active ? t.color.text : t.color.muted}
++              >
++                {` ${title} `}
++              </Text>
++            </Box>
++            <Box onClick={() => handleClose(tab.id)}>
 +              <Text color={t.color.muted}>{' ×'}</Text>
 +            </Box>
 +          </Box>
@@ -564,12 +741,12 @@ index 0000000000..eb47fe23f2
 +})
 diff --git a/ui-tui/src/components/opencodePalette.tsx b/ui-tui/src/components/opencodePalette.tsx
 new file mode 100644
-index 0000000000..98922520aa
+index 0000000000..3adc12ff0d
 --- /dev/null
 +++ b/ui-tui/src/components/opencodePalette.tsx
-@@ -0,0 +1,323 @@
+@@ -0,0 +1,385 @@
 +import { Box, Text, useInput } from '@hermes/ink'
-+import { memo, useEffect, useState } from 'react'
++import { memo, useCallback, useEffect, useRef, useState } from 'react'
 +
 +import { useGateway } from '../app/gatewayContext.js'
 +import { patchOverlayState } from '../app/overlayStore.js'
@@ -592,6 +769,23 @@ index 0000000000..98922520aa
 +]
 +
 +const COLOR_MODES = ['auto', 'light', 'dark']
++
++// openhermes: exact port of the preview theme rules. A theme NAME resolves
++// to `oh-<name>` (dark) or `oh-<name>-light` through the effective color
++// mode: explicit light/dark wins, `auto` follows terminal detection.
++export const themeNameFromSkin = (skin: string): string | null => {
++  const m = /^oh-(.+?)(-light)?$/.exec(skin)
++
++  return m ? m[1] : null
++}
++
++export const resolveSkin = (name: string, colorMode: string): string => {
++  const mode = colorMode === 'light' || colorMode === 'dark'
++    ? colorMode
++    : detectLightMode() ? 'light' : 'dark'
++
++  return mode === 'light' ? `oh-${name}-light` : `oh-${name}`
++}
 +
 +interface PaletteRow {
 +  hint?: string
@@ -626,6 +820,9 @@ index 0000000000..98922520aa
 +  const [filter, setFilter] = useState('')
 +  const [activeIdx, setActiveIdx] = useState(0)
 +  const [values, setValues] = useState<Record<string, string>>({})
++  // openhermes: skin active when the themes view opened — Esc reverts to it,
++  // exactly like the preview (prevTheme).
++  const entrySkinRef = useRef('')
 +  const [currentSkin, setCurrentSkin] = useState('')
 +  const [err, setErr] = useState('')
 +
@@ -655,15 +852,25 @@ index 0000000000..98922520aa
 +    }
 +    void (async () => {
 +      try {
-+        const r = (await rpc('config.get', { key: 'skin' })) as { value?: unknown } | null
-+        setCurrentSkin(String(r?.value ?? ''))
++        const [s, m] = await Promise.all([
++          rpc('config.get', { key: 'skin' }) as Promise<{ value?: unknown } | null>,
++          rpc('config.get', { key: 'tui_theme' }) as Promise<{ value?: unknown } | null>
++        ])
++
++        const skin = String(s?.value ?? '')
++        setCurrentSkin(skin)
++        setValues(prev => ({ ...prev, tui_theme: String(m?.value ?? '') }))
++        // Snapshot for Esc-revert + highlight where you are (preview parity).
++        entrySkinRef.current = skin
++        const name = themeNameFromSkin(skin)
++        setActiveIdx(name ? Math.max(0, THEME_NAMES.indexOf(name)) : 0)
 +      } catch {
 +        setCurrentSkin('')
 +      }
 +    })()
 +  }, [rpc, view])
 +
-+  const setConfig = (key: string, value: string, local?: Record<string, string>) => {
++  const setConfig = useCallback((key: string, value: string, local?: Record<string, string>) => {
 +    void (async () => {
 +      try {
 +        await rpc('config.set', { key, value })
@@ -676,19 +883,28 @@ index 0000000000..98922520aa
 +        setErr(e instanceof Error ? e.message : String(e))
 +      }
 +    })()
-+  }
++  }, [rpc])
++
++  const colorMode = values['tui_theme'] || 'auto'
++  const skinFor = (name: string) => resolveSkin(name, colorMode)
 +
 +  const applyTheme = (name: string) => {
-+    const suffix = detectLightMode() ? '-light' : ''
-+    const skin = `oh-${name}${suffix}`
++    const skin = skinFor(name)
 +    setCurrentSkin(skin)
 +    setConfig('skin', skin)
 +  }
 +
 +  const cycleColorMode = () => {
-+    const cur = values['tui_theme'] || 'auto'
-+    const next = COLOR_MODES[(COLOR_MODES.indexOf(cur) + 1) % COLOR_MODES.length] ?? 'auto'
++    const next = COLOR_MODES[(COLOR_MODES.indexOf(colorMode) + 1) % COLOR_MODES.length] ?? 'auto'
 +    setConfig('tui_theme', next, { tui_theme: next })
++    // Re-apply the current theme through the new mode (preview parity).
++    const name = themeNameFromSkin(currentSkin)
++
++    if (name) {
++      const skin = resolveSkin(name, next)
++      setCurrentSkin(skin)
++      setConfig('skin', skin)
++    }
 +  }
 +
 +  const go = (v: View) => {
@@ -772,20 +988,13 @@ index 0000000000..98922520aa
 +    )
 +  } else {
 +    const q = filter.toLowerCase()
-+    const light = detectLightMode() ? '-light' : ''
 +    rows.push({
 +      group: 'Themes',
-+      items: THEME_NAMES.filter(n => n.includes(q)).map(n => {
-+        const skin = `oh-${n}${light}`
-+
-+        return {
-+          label: `${currentSkin === skin ? '● ' : '  '}${n}`,
-+          run: () => {
-+            applyTheme(n)
-+            onCancel()
-+          }
-+        }
-+      })
++      items: THEME_NAMES.filter(n => n.includes(q)).map(n => ({
++        label: `${currentSkin === skinFor(n) ? '● ' : '  '}${n}`,
++        // Hover already applied it live (preview parity) — Enter confirms.
++        run: () => onCancel()
++      }))
 +    })
 +  }
 +
@@ -803,6 +1012,26 @@ index 0000000000..98922520aa
 +
 +  const flat = visible.flatMap(g => g.items)
 +  const clamped = flat.length ? Math.min(activeIdx, flat.length - 1) : 0
++
++  // openhermes: navigating the themes list previews live, exactly like the
++  // preview (hover = apply, Enter = confirm, Esc = revert to entry skin).
++  const previewSkin = (() => {
++    if (view !== 'themes') {
++      return null
++    }
++
++    const names = THEME_NAMES.filter(n => n.includes(filter.toLowerCase()))
++    const name = names[Math.min(activeIdx, Math.max(0, names.length - 1))]
++
++    return name ? skinFor(name) : null
++  })()
++
++  useEffect(() => {
++    if (previewSkin && previewSkin !== currentSkin) {
++      setCurrentSkin(previewSkin)
++      setConfig('skin', previewSkin)
++    }
++  }, [currentSkin, previewSkin, setConfig])
 +
 +  useInput((ch, key) => {
 +    if (key.upArrow) {
@@ -824,7 +1053,17 @@ index 0000000000..98922520aa
 +    }
 +
 +    if (key.escape) {
-+      if (view !== 'commands') {
++      if (view === 'themes') {
++        // Revert the hover preview to the entry skin (preview parity).
++        const entry = entrySkinRef.current
++
++        if (entry) {
++          setCurrentSkin(entry)
++          setConfig('skin', entry)
++        }
++
++        go('commands')
++      } else if (view !== 'commands') {
 +        go('commands')
 +      } else {
 +        onCancel()
@@ -869,12 +1108,12 @@ index 0000000000..98922520aa
 +            const selected = idx === clamped
 +
 +            return (
-+              <Box justifyContent="space-between" key={r.label}>
-+                <Text
-+                  backgroundColor={selected ? t.color.selectionBg : undefined}
-+                  bold={selected}
-+                  color={selected ? t.color.text : t.color.text}
-+                >
++              <Box
++                backgroundColor={selected ? t.color.selectionBg : undefined}
++                justifyContent="space-between"
++                key={r.label}
++              >
++                <Text bold={selected} color={t.color.text}>
 +                  {r.label}
 +                </Text>
 +                <Text color={t.color.muted}>{r.value ?? r.hint ?? ''}</Text>
